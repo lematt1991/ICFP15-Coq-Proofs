@@ -1,0 +1,9 @@
+./ast.v
+./fullImpliesPartial.v
+./heap.v
+./hetList.v
+./partialEqFull.v
+./partialImpliesFull.v
+./semantics.v
+./stepPreservesRewind.v
+./tactics.v
