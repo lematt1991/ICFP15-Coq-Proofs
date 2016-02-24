@@ -22,6 +22,7 @@ Inductive value : term -> Prop :=
 |v_loc : forall n, value (loc n)
 |v_unit : value unit. 
 
+(*Evaluation context*)
 Inductive ctxt : Type :=
 |hole : ctxt
 |appCtxt : term -> ctxt -> ctxt
@@ -32,9 +33,13 @@ Inductive ctxt : Type :=
 |allocCtxt : ctxt -> ctxt
 |inatomicCtxt : ctxt -> ctxt. 
 
+(*location (address)*)
 Definition location := nat.
+
+(*timestamp used by the STM*)
 Definition stamp := nat. 
 
+(*log entry for STM metadata*)
 Inductive logItem : Type := 
 |readItem : location -> ctxt -> term -> logItem
 |writeItem : location -> term -> logItem
