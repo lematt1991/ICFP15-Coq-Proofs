@@ -45,15 +45,21 @@ Inductive logItem : Type :=
 |writeItem : location -> term -> logItem
 . 
 
-Definition log := list logItem. 
+Inductive lock : Type :=
+|Locked : nat -> lock     (*ID of thread who owns lock*)
+|Unlocked : nat -> lock   (*version number*)
+. 
+(*"Address" * contents * stamp*)
+Definition TVar := location * term * lock. 
+
+Definition read_set := list (location * ctxt * term).
+Definition write_set := list (location * term). 
  
-Definition thread := option (nat * term) * log * term. 
+Definition thread := option (nat * term) * read_set * write_set * term. 
 
 Inductive pool : Type := 
 |Single : thread -> pool
 |Par : pool -> pool -> pool. 
-
-
 
 
 

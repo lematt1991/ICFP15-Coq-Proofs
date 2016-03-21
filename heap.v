@@ -2,7 +2,7 @@ Require Export ast.
 Require Export Coq.Arith.Peano_dec. 
 
 (*maps locations to terms and time stamps*)
-Definition heap := list (location * term * stamp). 
+Definition heap := list TVar. 
 
 (*lookup an address in the heap*)
 Fixpoint lookup (H:heap) (l:location) :=
@@ -13,6 +13,14 @@ Fixpoint lookup (H:heap) (l:location) :=
       |nil => None
   end. 
 
+Fixpoint update H l (v : term) (stamp : lock) :=
+  match H with
+    | (l', v', s')::H' =>
+      if eq_nat_dec l l'
+      then (l', v, stamp) :: H'
+      else (l', v', s') :: update H' l v stamp
+    | nil => nil
+  end. 
 (*
  * If we can lookup a location in heap H, then we must 
  * still be able to find it if we extend the heap.
@@ -23,9 +31,9 @@ Theorem lookupExtension : forall Hnew H l v S,
 Proof.
   induction Hnew; intros. 
   {simpl. exists v. exists S. assumption. }
-  {simpl. destruct a. destruct p. destruct (eq_nat_dec l l0). 
-   {subst. exists t. exists s. reflexivity. }
-   {eapply IHHnew in H0. invertHyp. exists x. exists x0. assumption. }
+  {simpl. destruct a. destruct p. destruct (eq_nat_dec l l1). 
+   {subst. eauto. }
+   {eapply IHHnew in H0. invertHyp. eauto. }
   }
 Qed.
 

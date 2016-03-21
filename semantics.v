@@ -1,5 +1,5 @@
-Require Export heap.     
-Require Export Omega. 
+Require Export heap.       
+Require Export Omega.  
 Require Export hetList. 
 Require Export Coq.Program.Equality. 
 
@@ -93,37 +93,41 @@ commit H ==> indicates the log is valid and H contains the new writes from the l
 abort e L ==> log was invalid, resume execution at term e with log L
 *)
 Inductive validateRes : Type := 
-|commit : heap -> validateRes
-|abort : term -> log -> validateRes. 
+|commit : validateRes
+|abort : term -> read_set -> validateRes. 
 
-(*Transactional log validation*)
-Inductive validate : stamp -> log -> heap -> stamp -> validateRes -> Prop :=
-|validateNil : forall S S' H, validate S nil H S' (commit H)
-|validateCommitRead : forall S S' S'' l v E H H' L,
-                        lookup H l = Some(v, S') -> S > S' -> 
-                        validate S L H S'' (commit H') ->
-                        validate S (readItem l E v::L) H S'' (commit H')
-|validateAbortPropogate : forall S S' L H x L' e, 
-                            validate S L H S' (abort e L') ->
-                            validate S (x::L) H S' (abort e L')
-|validateAbortRead : forall S S' S'' H L E H' l v v',
-              validate S L H S'' (commit H') -> lookup H l = Some(v, S') ->
-              S' > S -> validate S (readItem l E v'::L) H S'' 
-                                (abort (fill E(get(loc l))) L)
-|validateWrite : forall S S' L H H' l v,
-                   validate S L H S' (commit H') ->
-                   validate S (writeItem l v::L) H S' (commit ((l, v, S')::H'))
-.
+Inductive invalidStamp : nat -> lock -> Prop :=
+| StampStale : forall s s', s < s' -> invalidStamp s (Unlocked s')
+| StampLocked : forall s s', invalidStamp s (Locked s'). 
 
-(*lookup a term in a thread's write set*)
-Fixpoint logLookup (L:log) (l:location) :=
-  match L with
-      |readItem _ _ _::L' => logLookup L' l
-      |writeItem l' v::L' => if eq_nat_dec l l'
-                            then Some v
-                            else logLookup L' l
-      |nil => None
-  end. 
+Inductive validStamp : nat -> lock -> Prop :=
+| LockOwned : forall s, validStamp s (Locked s)
+| StampFresh : forall s s', s > s' -> validStamp s (Unlocked s').
+
+(* Transactional log validation
+ * Validate RV L H WV Res
+ * RV - read version
+ * RS - read set
+ * H - heap
+ * WV - write version
+ * Res - result of validation, either:
+ *    + commit - validation succeeded
+ *    + abort e L - abort, picking up with term `e` and log `L`
+ *)
+Inductive validate : stamp -> read_set -> heap -> validateRes -> Prop :=
+|validateNil : forall S H, validate S nil H commit
+|validateRead : forall S lock l v E H L,
+                        lookup H l = Some(v, lock) -> validStamp S lock -> 
+                        validate S L H commit ->
+                        validate S ((l, E, v)::L) H commit
+|validateAbortPropogate : forall S L H x L' e, 
+                            validate S L H (abort e L') ->
+                            validate S (x::L) H (abort e L')
+|validateAbortRead : forall S lock H L E l v v',
+              validate S L H commit -> lookup H l = Some(v, lock) ->
+              invalidStamp S lock ->
+              validate S ((l, E, v')::L) H
+                       (abort (fill E(get(loc l))) L). 
 
 Fixpoint open (e:term) (k:nat) (e':term) :=
   match e with
@@ -144,25 +148,25 @@ Fixpoint open (e:term) (k:nat) (e':term) :=
 
 (*transactional step (used by both p_step and f_step)*) 
 Inductive trans_step (H:heap) : thread -> thread -> Prop :=
-|t_readStep : forall S L E l t v e0 S', 
-                decompose t E (get (loc l)) -> logLookup L l = None ->
-                lookup H l = Some(v, S') -> S > S' ->
-                trans_step H (Some(S, e0), L, t) 
-                             (Some(S, e0), readItem l E v::L, fill E v)
-|t_readInDomainStep : forall S l v L E t e0,
-                      decompose t E (get (loc l)) -> logLookup L l = Some v ->
-                      trans_step H (Some(S, e0), L, t) (Some(S, e0), L, fill E v)
-|t_writeStep : forall S L E l v t,
+(*read after write*)
+|t_readStep : forall S RS WS E l t v e0 lock, 
+                decompose t E (get (loc l)) -> 
+                lookup H l = Some(v, lock) -> validStamp S lock ->
+                trans_step H (Some(S, e0), RS, WS, t) 
+                             (Some(S, e0), (l, E, v)::RS, WS, fill E v)
+(*|t_writeStep : forall S L E l v t,
                decompose t E (put (loc l) v) -> S <> None ->
                trans_step H (S, L, t) (S, writeItem l v::L, fill E unit)
-|t_atomicIdemStep : forall E e t L S,
+*)
+|t_atomicIdemStep : forall E e t RS WS S,
                      decompose t E (atomic e) -> S <> None ->
-                     trans_step H (S, L, t) (S, L, fill E e)
-|t_betaStep : forall L E e t v S, 
+                     trans_step H (S, RS, WS, t) (S, RS, WS, fill E e)
+|t_betaStep : forall RS WS E e t v S, 
               decompose t E (app (lambda e) v) -> S <> None ->
-              trans_step H (S, L, t) (S, L, fill E (open e 0 v))
+              trans_step H (S, RS, WS, t) (S, RS, WS, fill E (open e 0 v))
 .
 
+(*
 (*same as trans_step with addition of r_readStepInvalid*)
 Inductive replay_step H : thread -> thread -> Prop :=
 |r_readStepValid : forall S L E l t v e0 S', 
@@ -200,96 +204,97 @@ Inductive rewind H : thread -> thread -> Prop :=
 |rewindStep : forall t t' t'', 
                 rewind H t t' -> replay_step H t' t'' -> 
                 rewind H t t''. 
+ *)
 
-(*parital abort STM semantics (single step)*)
-Inductive p_step : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
-|p_transStep : forall C H t t', trans_step H t t' -> 
-                           p_step C H (Single t) C H (Single t')
-|p_parLStep : forall C H T1 T2 C' H' T1', 
-          p_step C H T1 C' H' T1' -> p_step C H (Par T1 T2) C' H' (Par T1' T2)
-|p_parRStep : forall C H T1 T2 C' H' T2', 
-          p_step C H T2 C' H' T2' -> p_step C H (Par T1 T2) C' H' (Par T1 T2')
-|p_forkStep : forall C H E e t, 
+(*
+ * writeback WS H H'
+ * WS - write set
+ * H - initial heap
+ * WV - write version
+ * H' - Updated heap with WS's effects and locks released
+ *)
+Inductive writeback (wv : nat) : write_set -> heap -> heap -> Prop :=
+|WBNil : forall H, writeback wv nil H H
+|WBCons : forall v' l v WS H H'' S,
+            lookup H l = Some(v, Locked S) ->
+            writeback wv WS (update H l v (Unlocked wv)) H'' ->
+            writeback wv ((l, v')::WS) H H''
+. 
+
+Definition step_sig := nat -> heap -> pool -> nat -> heap -> pool -> Prop. 
+
+(*common steps (single step)*)
+Inductive c_step (st : step_sig) : step_sig :=
+|c_liftedStep : forall C H P C' H' P',
+                  st C H P C' H' P' ->
+                  c_step st C H P C' H' P'
+|c_transStep : forall C H t t', trans_step H t t' -> 
+                           c_step st C H (Single t) C H (Single t')
+|c_parLStep : forall C H T1 T2 C' H' T1', 
+          c_step st C H T1 C' H' T1' -> c_step st C H (Par T1 T2) C' H' (Par T1' T2)
+|c_parRStep : forall C H T1 T2 C' H' T2', 
+          c_step st C H T2 C' H' T2' -> c_step st C H (Par T1 T2) C' H' (Par T1 T2')
+|c_forkStep : forall C H E e t, 
               decompose t E (fork e) ->
-              p_step C H (Single(None, nil, t)) C H 
-                   (Par (Single(None, nil, fill E unit)) (Single(None, nil, e)))
-|p_eagerAbort : forall L S H L' C e0 e' t v E l S',
-                  lookup H l = Some(v, S') -> S < S' ->
-                  validate S (readItem l E v::L) H C (abort e' L') ->
-                  decompose t E (get (loc l)) -> logLookup L l = None ->
-                  p_step C H (Single (Some(S, e0), L, t))
-                         (C+1) H (Single(Some(C, e0), L', e'))
-|p_abortStep : forall L S H L' C e e0 e' S', 
-           validate S L H S' (abort e' L') ->
-           p_step C H (Single(Some(S, e0), L, e))
-                  (plus 1 C) H (Single(Some(C, e0), L', e'))
-|p_allocStep : forall C H v E t l, 
+              c_step st C H (Single(None, nil, nil, t)) C H 
+                   (Par (Single(None, nil, nil, fill E unit)) (Single(None, nil, nil, e)))
+|c_allocStep : forall C H v E t l, 
                lookup H l = None -> decompose t E (alloc v) ->
-               p_step C H (Single(None, nil, t)) (plus 1 C) ((l, v, C)::H)
-                    (Single(None, nil, fill E (loc l)))
-|p_commitStep : forall C H S L v t E H' e0, 
-                validate S L H C (commit H') -> decompose t E (inatomic v) ->
-                p_step C H (Single(Some(S, e0), L, t)) (plus 1 C) H' (Single(None, nil, fill E v))
-|p_atomicStep : forall C H E e t, 
+               c_step st C H (Single(None, nil, nil, t)) (plus 1 C) ((l, v, Unlocked 0)::H)
+                    (Single(None, nil, nil, fill E (loc l)))
+|c_commitStep : forall C H S RS WS v t E H' e0, 
+                  validate S RS H commit -> decompose t E (inatomic v) ->
+                  writeback C WS H H' -> 
+                  c_step st C H (Single(Some(S, e0), RS, WS, t)) (plus 1 C)
+                         H' (Single(None, nil, nil, fill E v))
+|c_atomicStep : forall C H E e t, 
                 decompose t E (atomic e) ->
-                p_step C H (Single(None, nil, t)) (plus 1 C) H 
-                       (Single(Some(C, fill E(inatomic e)),[],fill E (inatomic e)))
-|p_betaStep : forall C H E e t v, 
+                c_step st C H (Single(None, nil, nil, t)) (plus 1 C) H 
+                       (Single(Some(C, fill E(inatomic e)),[],[],fill E (inatomic e)))
+|c_betaStep : forall C H E e t v, 
               decompose t E (app (lambda e) v) -> 
-              p_step C H (Single(None, nil, t)) C H
-                     (Single(None, nil, fill E (open e 0 v))). 
+              c_step st C H (Single(None, nil, nil, t)) C H
+                     (Single(None, nil, nil, fill E (open e 0 v))). 
 
-(*reflexive transitive closure of partial multistep*)
-Inductive p_multistep : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
-|p_multi_refl : forall C H T, p_multistep C H T C H T
-|p_multi_step : forall C H T C' H' T' C'' H'' T'', 
-                p_step C H T C' H' T' -> p_multistep C' H' T' C'' H'' T'' ->
-                p_multistep C H T C'' H'' T''. 
+Inductive p_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
+|p_eagerAbort : forall RS WS S H RS' C e0 e' t v E l lock,
+                  lookup H l = Some(v, lock) -> invalidStamp S lock ->
+                  validate S ((l, E, v)::RS) H (abort e' RS') ->
+                  decompose t E (get (loc l)) -> 
+                  p_step_ C H (Single (Some(S, e0), RS, WS, t))
+                         (C+1) H (Single(Some(C, e0), RS', nil, e'))
+|p_abortStep : forall RS WS S H RS' C e e0 e', 
+                 validate S RS H (abort e' RS') ->
+                 p_step_ C H (Single(Some(S, e0), RS, WS, e))
+                        (plus 1 C) H (Single(Some(C, e0), RS', nil, e'))
+.
 
 (*full abort STM semantics (single step)*)
-Inductive f_step : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
-|f_transStep : forall C H t t', trans_step H t t' -> 
-                           f_step C H (Single t) C H (Single t')
-|f_parLStep : forall C H T1 T2 C' H' T1', 
-          f_step C H T1 C' H' T1' -> f_step C H (Par T1 T2) C' H' (Par T1' T2)
-|f_parRStep : forall C H T1 T2 C' H' T2', 
-          f_step C H T2 C' H' T2' -> f_step C H (Par T1 T2) C' H' (Par T1 T2')
-|f_forkStep : forall C H E e t, 
-              decompose t E (fork e) ->
-              f_step C H (Single(None, nil, t)) C H 
-                   (Par (Single(None, nil, fill E unit)) (Single(None, nil, e)))
-|f_eagerAbort : forall L S H L' C e0 e' t v E l S',
-                  lookup H l = Some(v, S') -> S < S' ->
-                  validate S (readItem l E v::L) H C (abort e' L') ->
-                  decompose t E (get (loc l)) -> logLookup L l = None ->
-                  f_step C H (Single (Some(S, e0), L, t))
-                         (C+1) H (Single(Some(C, e0), nil, e0))
-|f_abortStep : forall L S H L' C e e0 e' S', 
-           validate S L H S' (abort e' L') -> 
-           f_step C H (Single(Some(S, e0), L, e)) (plus 1 C) H 
-                  (Single(Some(C, e0), nil, e0))
-|f_allocStep : forall C H v E t l, 
-               lookup H l = None -> decompose t E (alloc v) ->
-               f_step C H (Single(None, nil, t)) (plus 1 C) ((l, v, C)::H)
-                    (Single(None, nil, fill E (loc l)))
-|f_commitStep : forall C H S L v t E H' e0, 
-                validate S L H C (commit H') -> decompose t E (inatomic v) ->
-                f_step C H (Single(Some(S, e0), L, t)) (plus 1 C) H' (Single(None, nil, fill E v))
-|f_atomicStep : forall C H E e t, 
-                decompose t E (atomic e) ->
-                f_step C H (Single(None, nil, t)) (plus 1 C) H 
-                       (Single(Some(C, fill E (inatomic e)), nil, fill E (inatomic e)))
-|f_betaStep : forall C H E e t v, 
-              decompose t E (app (lambda e) v) -> 
-              f_step C H (Single(None, nil, t)) C H 
-                     (Single(None, nil, fill E (open e 0 v))). 
+Inductive f_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
+|f_eagerAbort : forall RS lock WS RS' S H C e0 e' t v E l,
+                  lookup H l = Some(v, lock) -> invalidStamp S lock ->
+                  validate S ((l, E, v)::RS) H (abort e' RS') ->
+                  decompose t E (get (loc l)) -> 
+                  f_step_ C H (Single (Some(S, e0), RS, WS, t))
+                         (C+1) H (Single(Some(C, e0), nil, nil, e0))
+|f_abortStep : forall RS WS RS' S H C e e0 e', 
+           validate S RS H (abort e' RS') -> 
+           f_step_ C H (Single(Some(S, e0), RS, WS, e)) (plus 1 C) H 
+                  (Single(Some(C, e0), nil, nil, e0))
+. 
 
-(*reflexivie transitive closure of full multistep*)
-Inductive f_multistep : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
-|f_multi_refl : forall C H T, f_multistep C H T C H T
-|f_multi_step : forall C H T C' H' T' C'' H'' T'', 
-                f_step C H T C' H' T' -> f_multistep C' H' T' C'' H'' T'' ->
-                f_multistep C H T C'' H'' T''. 
+Definition p_step := c_step p_step_.
+Definition f_step := c_step f_step_. 
+
+(*reflexive transitive closure of partial multistep*)
+Inductive multistep (st : step_sig) : step_sig :=
+|c_multi_refl : forall C H T, multistep st C H T C H T
+|c_multi_step : forall C H T C' H' T' C'' H'' T'', 
+                  st C H T C' H' T' -> multistep st C' H' T' C'' H'' T'' ->
+                  multistep st C H T C'' H'' T''. 
+
+Definition f_multistep := multistep f_step.
+Definition p_multistep := multistep p_step.
 
 (*reflexivit transitive closure of trans_step*)
 Inductive trans_multistep H : thread -> thread -> Prop :=
@@ -304,49 +309,51 @@ Definition postfix {A:Type} (L1 L2 : list A) := exists diff, L2 = diff ++ L1.
 (*all threads can rewind to their initial term of a transaction and have
 **a stamp number less than the global clock.  The stamp number 
 **constraint probably doesn't belong here, but its handy to have*)
+(*
 Inductive poolRewind C H : pool -> Prop :=
 |rewindSingleNoTX : forall e, poolRewind C H (Single(None,nil,e))
 |rewindSingleInTX : forall S e0 L e, 
                       rewind H (Some(S,e0),nil,e0) (Some(S,e0),L,e) ->
                       S < C -> poolRewind C H (Single(Some(S,e0),L,e))
 |rewindPar : forall T1 T2, poolRewind C H T1 -> poolRewind C H T2 -> poolRewind C H (Par T1 T2). 
-
+ *)
+ 
 (*inject every step in a multistep derivation into a Par*)
-Theorem f_multi_L : forall C H T1 T2 T1' C' H', 
-                      f_multistep C H T1 C' H' T1' ->
-                      f_multistep C H (Par T1 T2) C' H' (Par T1' T2). 
+Theorem multi_L : forall st C H T1 T2 T1' C' H', 
+                      multistep (c_step st) C H T1 C' H' T1' ->
+                      multistep (c_step st) C H (Par T1 T2) C' H' (Par T1' T2). 
 Proof.
-  intros C H T1 T2 T1' C' H' HYP. induction HYP.
+  intros st C H T1 T2 T1' C' H' HYP. induction HYP.
   {constructor. }
-  {econstructor. eapply f_parLStep. eassumption. eassumption. }
+  {econstructor. eapply c_parLStep. eassumption. auto. }
 Qed. 
-
+  
 (*inject every step in a multistep derivation into a Par*)
-Theorem f_multi_R : forall C H T1 T2 T2' C' H', 
-                      f_multistep C H T2 C' H' T2' ->
-                      f_multistep C H (Par T1 T2) C' H' (Par T1 T2'). 
+Theorem multi_R : forall st C H T1 T2 T2' C' H', 
+                      multistep (c_step st) C H T2 C' H' T2' ->
+                      multistep (c_step st) C H (Par T1 T2) C' H' (Par T1 T2'). 
 Proof.
-  intros C H T1 T2 T2' C' H' HYP. induction HYP.
+  intros st C H T1 T2 T2' C' H' HYP. induction HYP.
   {constructor. }
-  {econstructor. eapply f_parRStep. eassumption. eassumption. }
+  {econstructor. eapply c_parRStep. eassumption. eassumption. }
 Qed. 
 
 (*validation is idempotent*)
-Theorem validateValidate : forall S L H S' L' e, 
-                             validate S L H S' (abort e L') ->
-                             exists H'', validate S L' H S' (commit H''). 
+Theorem validateValidate : forall S L H L' e,  
+                             validate S L H (abort e L') ->
+                             validate S L' H commit. 
 Proof.
-  intros S L H S' L' e HYP. dependent induction HYP; eauto. 
+  intros S L H L' e HYP. dependent induction HYP; eauto. 
 Qed. 
 
 (*the log returned in an abort is a postfix of the initial log*)
-Theorem abortLogPostfix : forall S L H S' L' e, 
-                            validate S L H S' (abort e L') ->
+Theorem abortLogPostfix : forall S L H L' e, 
+                            validate S L H (abort e L') ->
                             postfix L' L. 
 Proof.
-  intros S L H S' L' e HYP. remember (abort e L'). induction HYP; try solveByInv. 
+  intros S L H L' e HYP. remember (abort e L'). induction HYP; try solveByInv. 
   {apply IHHYP in Heqv. unfold postfix in *. invertHyp.  exists (x::x0). auto. }
-  {inv Heqv. unfold postfix. exists [readItem l E v']. auto. }
+  {inv Heqv. unfold postfix. exists [(l, E, v')]. auto. }
 Qed.
 
 (*filling an evaluation context with the result of a decomposition
@@ -364,6 +371,7 @@ Proof.
   {destruct y. inv H. inv H. simpl. apply f_equal. auto. }
 Qed. 
 
+(*
 (*replay relation is transitive*)
 Theorem trans_replay: forall H t t' t'', 
                          replay H t' t'' -> replay H t t' ->
@@ -391,43 +399,15 @@ Proof.
   {induction HYP. constructor. eapply rewindTrans; eauto.
    econstructor; eauto. constructor. }
 Qed. 
+ *)
 
 (*partial multistep relation is transitive*)
-Theorem p_multi_trans : forall C H T C' H' T' C'' H'' T'',
-                          p_multistep C H T C' H' T' ->
-                          p_multistep C' H' T' C'' H'' T'' ->
-                          p_multistep C H T C'' H'' T''.
+Theorem multi_trans : forall st C H T C' H' T' C'' H'' T'',
+                          multistep st C H T C' H' T' ->
+                          multistep st C' H' T' C'' H'' T'' ->
+                          multistep st C H T C'' H'' T''.
 Proof.
-  intros C H T C' H' T' C'' H'' T'' HYP1 HYP2. 
+  intros st C H T C' H' T' C'' H'' T'' HYP1 HYP2. 
   induction HYP1; auto. econstructor; eauto.
 Qed. 
 
-(*full multistep relation is transitive*)
-Theorem f_multi_trans : forall C H T C' H' T' C'' H'' T'',
-                          f_multistep C H T C' H' T' ->
-                          f_multistep C' H' T' C'' H'' T'' ->
-                          f_multistep C H T C'' H'' T''.
-Proof.
-  intros C H T C' H' T' C'' H'' T'' HYP1 HYP2. 
-  induction HYP1; auto. econstructor; eauto. 
-Qed. 
-
-(*inject left multistep derivation into a Par*)
-Theorem p_multi_L : forall C H T1 T2 T1' C' H', 
-                      p_multistep C H T1 C' H' T1' ->
-                      p_multistep C H (Par T1 T2) C' H' (Par T1' T2). 
-Proof.
-  intros. induction H0.
-  {constructor. }
-  {econstructor. eapply p_parLStep. eassumption. eassumption. }
-Qed. 
-
-(*inject right multistep derivation into a Par*)
-Theorem p_multi_R : forall C H T1 T2 T2' C' H', 
-                      p_multistep C H T2 C' H' T2' ->
-                      p_multistep C H (Par T1 T2) C' H' (Par T1 T2'). 
-Proof.
-  intros. induction H0.
-  {constructor. }
-  {econstructor. eapply p_parRStep. eassumption. eassumption. }
-Qed. 
