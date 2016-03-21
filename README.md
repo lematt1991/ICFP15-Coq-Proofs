@@ -1,8 +1,8 @@
-ICFP'15 Proofs
+TinySTM Correctness Proofs
 -
 
-This directory contains all of the proofs verifying that the partial abort semantics is equal to the full abort semantics provided in "Partial Aborts for Transactions via First-Class Continuations," submitted to ICFP'15.
+This repo contains a copy of the ICFP Coq proofs, modified to model TinySTM.
+
 
 The entire development can be built by running `make`
 
-All proofs go through using Coq version 8.4pl6
