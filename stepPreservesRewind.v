@@ -1,7 +1,7 @@
 Require Export semantics. 
-
+ 
 (*retrieve the stamp number from a heap location*)
-Definition getStamp (x : location * term * stamp) :=
+Definition getStamp (x : location * term * lock) :=
   match x with
       |(_,_,s) => s
   end.  
@@ -12,31 +12,35 @@ Definition getStamp (x : location * term * stamp) :=
 **has a timestamp of C*)
 Theorem lookupExtension : forall H' l v S H C, 
                   lookup H l = Some(v, S) ->
-                  Forall (fun x : location * term * stamp => getStamp x = C) H' ->
+                  Forall (fun x : TVar => getStamp x = Unlocked C) H' ->
                   lookup (H'++H) l = Some(v, S) \/
                   exists S' v', lookup (H'++H) l = Some(v', S') /\
-                           S' = C. 
+                           S' = Unlocked C. 
 Proof.
   induction H'; intros l v S H C HYP1 HYP2. 
   {simpl. auto. }
-  {simpl in *. destruct a. destruct p. destruct (eq_nat_dec l l0). 
+  {simpl in *. destruct a. destruct p. destruct (eq_nat_dec l l1). 
    {right. subst. repeat econstructor. inv HYP2. auto. }
    {inv HYP2. eapply IHH' in HYP1; eauto. }
   }
 Qed. 
 
 (*we can produce the same replay derivation under an extended heap, if everything
-**in the extension has a timestamp greater than the thread being replayed*)
-Theorem replayHeapExtension : forall H H' S e0 L e L' e' C,
-                      replay H (Some(S,e0),L,e) (Some(S,e0),L',e') -> S < C ->
-                      Forall (fun x : location * term * stamp => getStamp x = C) H' ->
-                      replay (H'++H) (Some(S,e0),L,e) (Some(S,e0),L',e'). 
+**in the extension has a timestamp greater than the thread being replayed and is unlocked*)
+Theorem replayHeapExtension : forall H H' S e0 RS RS' WS WS' e e' C,
+                      replay H (Some(S,e0),RS,WS,e) (Some(S,e0),RS',WS',e') -> S < C ->
+                      Forall (fun x : TVar => getStamp x = Unlocked C) H' ->
+                      replay (H'++H) (Some(S,e0),RS,WS,e) (Some(S,e0),RS',WS',e'). 
 Proof.
   intros. dependent induction H0. 
   {constructor. }
   {inv H0. 
-   {copy H8. eapply lookupExtension with (H':=H') in H0; eauto. inv H0. 
+   {eapply lookupExtension with (H':=H') in H11; eauto. inv H11.
     {econstructor. eapply r_readStepValid; eauto. eauto. }
+    {invertHyp. econstructor. eapply r_readStepInvalid; eauto. constructor.
+     omega. eauto. }
+   }
+   {econstructor. eapply r_readStepValid; eauto. eauto. }
     {invertHyp. econstructor. eapply r_readStepInvalid; eauto. omega. eauto. }
    }
    {copy H8. eapply lookupExtension with (H':=H') in H0; eauto. inv H0. 

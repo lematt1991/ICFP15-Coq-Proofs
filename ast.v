@@ -46,7 +46,7 @@ Inductive logItem : Type :=
 . 
 
 Inductive lock : Type :=
-|Locked : nat -> lock     (*ID of thread who owns lock*)
+|Locked : nat -> nat -> lock     (*ID of thread who owns lock and previous version*)
 |Unlocked : nat -> lock   (*version number*)
 . 
 (*"Address" * contents * stamp*)
