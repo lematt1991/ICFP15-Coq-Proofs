@@ -159,7 +159,7 @@ Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
                            (tid, Some(S, e0), (l, E, v)::RS, WS, fill E v)
 |t_writeLocked : forall S RS WS tid E l t v v' e0 H lock lock',
                    decompose t E (put (loc l) v) ->
-                   lookup H l = Some(v', lock) -> acquireLock S lock lock' ->
+                   lookup H l = Some(v', lock) -> acquireLock tid lock lock' ->
                    trans_step H (tid, Some(S,e0),RS,WS,t) (update H l v lock')
                               (tid, Some(S,e0),RS,((l, v')::WS), fill E unit)
 |t_atomicIdemStep : forall E e t tid RS WS H S,
@@ -183,7 +183,7 @@ Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
                                    (tid, Some(S, e0), (l, E, v')::RS, WS, fill E v')
 |r_writeLocked : forall S RS WS E tid l t v v' e0 H lock lock',
                    decompose t E (put (loc l) v) ->
-                   lookup H l = Some(v', lock) -> acquireLock S lock lock' ->
+                   lookup H l = Some(v', lock) -> acquireLock tid lock lock' ->
                    replay_step H (tid, Some(S,e0),RS,WS,t) (update H l v lock')
                                (tid, Some(S,e0),RS,(l,v')::WS, fill E unit)
 |r_writeInvalid : forall S RS WS E tid l t v v' e0 H lock,
@@ -280,7 +280,7 @@ Inductive c_step (st : step_sig) : step_sig :=
 Inductive p_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
 |p_abortStep : forall RS WS S H H' tid RS' C e e0 e', 
                  validate S RS H (abort e' RS') ->
-                 releaseLocks S WS H H' -> 
+                 releaseLocks tid WS H H' -> 
                  p_step_ C H (Single(tid, Some(S, e0), RS, WS, e))
                         (plus 1 C) H' (Single(tid, Some(C, e0), RS', nil, e'))
 .
@@ -289,7 +289,7 @@ Inductive p_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
 Inductive f_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
 |f_abortStep : forall RS WS RS' S H tid H' C e e0 e', 
                  validate S RS H (abort e' RS') ->
-                 releaseLocks S WS H H' -> 
+                 releaseLocks tid WS H H' -> 
                  f_step_ C H (Single(tid, Some(S, e0), RS, WS, e)) (plus 1 C) H'
                          (Single(tid, Some(C, e0), nil, nil, e0))
 . 
@@ -324,7 +324,7 @@ Definition postfix {A:Type} (L1 L2 : list A) := exists diff, L2 = diff ++ L1.
 Inductive poolRewind (C : nat) (H : heap) : pool -> Prop :=
 |rewindSingleNoTX : forall tid e, poolRewind C H (Single(tid, None,nil,nil,e))
 |rewindSingleInTX : forall tid S e0 RS WS e H',
-                      releaseLocks S WS H H' ->
+                      releaseLocks tid WS H H' ->
                       rewind H' (tid, Some(S,e0),nil,nil,e0) H (tid, Some(S,e0),RS,WS,e) ->
                       S < C -> poolRewind C H (Single(tid, Some(S,e0),RS,WS,e))
 |rewindPar : forall T1 T2, poolRewind C H T1 -> poolRewind C H T2 -> poolRewind C H (Par T1 T2). 
