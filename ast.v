@@ -54,8 +54,9 @@ Definition TVar := location * term * lock.
 
 Definition read_set := list (location * ctxt * term).
 Definition write_set := list (location * term). 
- 
-Definition thread := option (nat * term) * read_set * write_set * term. 
+
+(*thread ID, start TX info, read set, write set, term*)
+Definition thread := nat * option (nat * term) * read_set * write_set * term. 
 
 Inductive pool : Type := 
 |Single : thread -> pool

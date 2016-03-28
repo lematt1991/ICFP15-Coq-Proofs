@@ -150,54 +150,68 @@ Inductive acquireLock : nat -> lock -> lock -> Prop :=
 | acquireLocked : forall S S', acquireLock S (Locked S S') (Locked S S')
 | acquireUnlocked : forall S S', S' < S -> acquireLock S (Unlocked S') (Locked S S'). 
 
-(*transactional step (used by both p_step and f_step)*) 
-Inductive trans_step (H:heap) : thread -> thread -> Prop :=
+Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
 (*read after write*)
-|t_readStep : forall S RS WS E l t v e0 lock, 
+|t_readStep : forall S RS WS E l t tid v e0 lock H, 
                 decompose t E (get (loc l)) -> 
                 lookup H l = Some(v, lock) -> validStamp S lock ->
-                trans_step H (Some(S, e0), RS, WS, t) 
-                             (Some(S, e0), (l, E, v)::RS, WS, fill E v)
-|t_atomicIdemStep : forall E e t RS WS S,
+                trans_step H (tid, Some(S, e0), RS, WS, t) H
+                           (tid, Some(S, e0), (l, E, v)::RS, WS, fill E v)
+|t_writeLocked : forall S RS WS tid E l t v v' e0 H lock lock',
+                   decompose t E (put (loc l) v) ->
+                   lookup H l = Some(v', lock) -> acquireLock S lock lock' ->
+                   trans_step H (tid, Some(S,e0),RS,WS,t) (update H l v lock')
+                              (tid, Some(S,e0),RS,((l, v')::WS), fill E unit)
+|t_atomicIdemStep : forall E e t tid RS WS H S,
                      decompose t E (atomic e) -> S <> None ->
-                     trans_step H (S, RS, WS, t) (S, RS, WS, fill E e)
-|t_betaStep : forall RS WS E e t v S, 
+                     trans_step H (tid, S, RS, WS, t) H (tid, S, RS, WS, fill E e)
+|t_betaStep : forall RS WS E e t v tid S H, 
               decompose t E (app (lambda e) v) -> S <> None ->
-              trans_step H (S, RS, WS, t) (S, RS, WS, fill E (open e 0 v))
+              trans_step H (tid, S, RS, WS, t) H (tid, S, RS, WS, fill E (open e 0 v))
 .
 
-Inductive replay_step (H : heap) : thread -> thread -> Prop := 
-|r_readStepValid : forall S RS WS E l t v e0 lock, 
+Inductive replay_step : heap -> thread -> heap -> thread -> Prop := 
+|r_readStepValid : forall S RS WS tid H E l t v e0 lock, 
                      decompose t E (get (loc l)) -> 
                      lookup H l = Some(v, lock) -> validStamp S lock ->
-                     replay_step H (Some(S, e0), RS, WS, t) 
-                                 (Some(S, e0), (l, E, v)::RS, WS, fill E v)
-|r_readStepInvalid : forall S RS WS E l t v e0 lock v', 
+                     replay_step H (tid, Some(S, e0), RS, WS, t) H
+                                 (tid, Some(S, e0), (l, E, v)::RS, WS, fill E v)
+|r_readStepInvalid : forall S RS WS tid E H l t v e0 lock v', 
                        decompose t E (get (loc l)) -> 
                        lookup H l = Some(v, lock) -> invalidStamp S lock ->
-                       replay_step H (Some(S, e0), RS, WS, t) 
-                                   (Some(S, e0), (l, E, v')::RS, WS, fill E v')
-|r_atomicIdemStep : forall E e t RS WS S,
+                       replay_step H (tid, Some(S, e0), RS, WS, t) H
+                                   (tid, Some(S, e0), (l, E, v')::RS, WS, fill E v')
+|r_writeLocked : forall S RS WS E tid l t v v' e0 H lock lock',
+                   decompose t E (put (loc l) v) ->
+                   lookup H l = Some(v', lock) -> acquireLock S lock lock' ->
+                   replay_step H (tid, Some(S,e0),RS,WS,t) (update H l v lock')
+                               (tid, Some(S,e0),RS,(l,v')::WS, fill E unit)
+|r_writeInvalid : forall S RS WS E tid l t v v' e0 H lock,
+                    decompose t E (put (loc l) v) ->
+                    lookup H l = Some(v', lock) -> invalidStamp S lock ->
+                    replay_step H (tid, Some(S,e0), RS, WS, t) H
+                                (tid, Some(S,e0), RS, WS, fill E unit)
+|r_atomicIdemStep : forall E e t RS tid WS H S,
                      decompose t E (atomic e) -> S <> None ->
-                     replay_step H (S, RS, WS, t) (S, RS, WS, fill E e)
-|r_betaStep : forall RS WS E e t v S, 
+                     replay_step H (tid, S, RS, WS, t) H (tid, S, RS, WS, fill E e)
+|r_betaStep : forall RS WS H tid E e t v S, 
               decompose t E (app (lambda e) v) -> S <> None ->
-              replay_step H (S, RS, WS, t) (S, RS, WS, fill E (open e 0 v))
+              replay_step H (tid, S, RS, WS, t) H (tid, S, RS, WS, fill E (open e 0 v))
 . 
 
 (*reflexive transitive closure of replay_step*)
-Inductive replay H : thread -> thread -> Prop :=
-|replayRefl : forall t, replay H t t
-|replayStep : forall t t' t'', 
-                replay_step H t t' -> replay H t' t'' -> 
-                replay H t t''. 
+Inductive replay : heap -> thread -> heap -> thread -> Prop :=
+|replayRefl : forall H t, replay H t H t
+|replayStep : forall t t' t'' H H' H'', 
+                replay_step H t H' t' -> replay H' t' H'' t'' -> 
+                replay H t H'' t''. 
 
 (*left recursive version of replay*)
-Inductive rewind H : thread -> thread -> Prop :=
-|rewindRefl : forall t, rewind H t t
-|rewindStep : forall t t' t'', 
-                rewind H t t' -> replay_step H t' t'' -> 
-                rewind H t t''. 
+Inductive rewind : heap -> thread -> heap -> thread -> Prop :=
+|rewindRefl : forall t H, rewind H t H t
+|rewindStep : forall t t' t'' H H' H'', 
+                rewind H t H' t' -> replay_step H' t' H'' t'' -> 
+                rewind H t H'' t''. 
 
 
 (*
@@ -215,6 +229,7 @@ Inductive writeback (wv : nat) : write_set -> heap -> heap -> Prop :=
             writeback wv ((l, v')::WS) H H''
 . 
 
+(*S is the thread ID of the releasing thread*)
 Inductive releaseLocks (S : nat) : write_set -> heap -> heap -> Prop :=
 |releaseEmpty : forall H, releaseLocks S [] H H
 |releaseCons : forall l v H H' S' v' WS,
@@ -229,63 +244,54 @@ Inductive c_step (st : step_sig) : step_sig :=
 |c_liftedStep : forall C H P C' H' P',
                   st C H P C' H' P' ->
                   c_step st C H P C' H' P'
-|c_transStep : forall C H t t', trans_step H t t' -> 
-                           c_step st C H (Single t) C H (Single t')
+|c_transStep : forall C H H' t t', trans_step H t H' t' -> 
+                           c_step st C H (Single t) C H' (Single t')
 |c_parLStep : forall C H T1 T2 C' H' T1', 
           c_step st C H T1 C' H' T1' -> c_step st C H (Par T1 T2) C' H' (Par T1' T2)
 |c_parRStep : forall C H T1 T2 C' H' T2', 
           c_step st C H T2 C' H' T2' -> c_step st C H (Par T1 T2) C' H' (Par T1 T2')
-|c_forkStep : forall C H E e t, 
+|c_forkStep : forall C H E e tid t, 
               decompose t E (fork e) ->
-              c_step st C H (Single(None, nil, nil, t)) C H 
-                   (Par (Single(None, nil, nil, fill E unit)) (Single(None, nil, nil, e)))
-|c_allocStep : forall C H v E t l, 
+              c_step st C H (Single(tid, None, nil, nil, t)) C H 
+                   (Par (Single(tid, None, nil, nil, fill E unit)) (Single(S tid, None, nil, nil, e)))
+|c_allocStep : forall C H v E t l tid, 
                lookup H l = None -> decompose t E (alloc v) ->
-               c_step st C H (Single(None, nil, nil, t)) (plus 1 C) ((l, v, Unlocked 0)::H)
-                    (Single(None, nil, nil, fill E (loc l)))
-|c_commitStep : forall C H S RS WS v t E H' e0, 
+               c_step st C H (Single(tid, None, nil, nil, t)) (plus 1 C) ((l, v, Unlocked 0)::H)
+                    (Single(tid, None, nil, nil, fill E (loc l)))
+|c_commitStep : forall C H S RS WS v t tid E H' e0, 
                   validate S RS H commit -> decompose t E (inatomic v) ->
                   writeback C WS H H' -> 
-                  c_step st C H (Single(Some(S, e0), RS, WS, t)) (plus 1 C)
-                         H' (Single(None, nil, nil, fill E v))
-|c_atomicStep : forall C H E e t, 
+                  c_step st C H (Single(tid, Some(S, e0), RS, WS, t)) (plus 1 C)
+                         H' (Single(tid, None, nil, nil, fill E v))
+|c_atomicStep : forall C H E e t tid, 
                 decompose t E (atomic e) ->
-                c_step st C H (Single(None, nil, nil, t)) (plus 1 C) H 
-                       (Single(Some(C, fill E(inatomic e)),[],[],fill E (inatomic e)))
-|c_betaStep : forall C H E e t v, 
+                c_step st C H (Single(tid, None, nil, nil, t)) (plus 1 C) H 
+                       (Single(tid, Some(C, fill E(inatomic e)),[],[],fill E (inatomic e)))
+|c_betaStep : forall C H E e t v tid, 
               decompose t E (app (lambda e) v) -> 
-              c_step st C H (Single(None, nil, nil, t)) C H
-                     (Single(None, nil, nil, fill E (open e 0 v))). 
+              c_step st C H (Single(tid, None, nil, nil, t)) C H
+                     (Single(tid, None, nil, nil, fill E (open e 0 v)))
+|c_tsExtend : forall C H t S e0 RS WS tid,
+                validate S RS H commit ->
+                c_step st C H (Single(tid, Some(S, e0), RS, WS, t)) (plus 1 C) H
+                       (Single(tid, Some(C, e0), RS, WS, t))
+.
 
 Inductive p_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
-|p_eagerAbort : forall RS WS S H H' RS' C e0 e' t v E l lock,
-                  lookup H l = Some(v, lock) -> invalidStamp S lock ->
-                  validate S ((l, E, v)::RS) H (abort e' RS') ->
-                  decompose t E (get (loc l)) ->
-                  releaseLocks S WS H H' -> 
-                  p_step_ C H (Single (Some(S, e0), RS, WS, t))
-                         (C+1) H' (Single(Some(C, e0), RS', nil, e'))
-|p_abortStep : forall RS WS S H H' RS' C e e0 e', 
+|p_abortStep : forall RS WS S H H' tid RS' C e e0 e', 
                  validate S RS H (abort e' RS') ->
                  releaseLocks S WS H H' -> 
-                 p_step_ C H (Single(Some(S, e0), RS, WS, e))
-                        (plus 1 C) H' (Single(Some(C, e0), RS', nil, e'))
+                 p_step_ C H (Single(tid, Some(S, e0), RS, WS, e))
+                        (plus 1 C) H' (Single(tid, Some(C, e0), RS', nil, e'))
 .
 
 (*full abort STM semantics (single step)*)
 Inductive f_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
-|f_eagerAbort : forall RS lock WS RS' S H H' C e0 e' t v E l,
-                  lookup H l = Some(v, lock) -> invalidStamp S lock ->
-                  validate S ((l, E, v)::RS) H (abort e' RS') ->
-                  decompose t E (get (loc l)) ->
-                  releaseLocks S WS H H' -> 
-                  f_step_ C H (Single (Some(S, e0), RS, WS, t))
-                         (C+1) H' (Single(Some(C, e0), nil, nil, e0))
-|f_abortStep : forall RS WS RS' S H H' C e e0 e', 
+|f_abortStep : forall RS WS RS' S H tid H' C e e0 e', 
                  validate S RS H (abort e' RS') ->
                  releaseLocks S WS H H' -> 
-                 f_step_ C H (Single(Some(S, e0), RS, WS, e)) (plus 1 C) H'
-                         (Single(Some(C, e0), nil, nil, e0))
+                 f_step_ C H (Single(tid, Some(S, e0), RS, WS, e)) (plus 1 C) H'
+                         (Single(tid, Some(C, e0), nil, nil, e0))
 . 
 
 Definition p_step := c_step p_step_.
@@ -302,11 +308,11 @@ Definition f_multistep := multistep f_step.
 Definition p_multistep := multistep p_step.
 
 (*reflexivit transitive closure of trans_step*)
-Inductive trans_multistep H : thread -> thread -> Prop :=
-|trans_refl : forall t, trans_multistep H t t
-|trans_multi_step : forall t t' t'', 
-                      trans_step H t t' -> trans_multistep H t' t'' ->
-                      trans_multistep H t t''. 
+Inductive trans_multistep : heap -> thread -> heap -> thread -> Prop :=
+|trans_refl : forall t H, trans_multistep H t H t
+|trans_multi_step : forall t t' t'' H H' H'', 
+                      trans_step H t H' t' -> trans_multistep H' t' H'' t'' ->
+                      trans_multistep H t H'' t''. 
 
 (*indicates that L1 is a postfix of L2*)
 Definition postfix {A:Type} (L1 L2 : list A) := exists diff, L2 = diff ++ L1. 
@@ -315,11 +321,12 @@ Definition postfix {A:Type} (L1 L2 : list A) := exists diff, L2 = diff ++ L1.
 **a stamp number less than the global clock.  The stamp number 
 **constraint probably doesn't belong here, but its handy to have*)
 
-Inductive poolRewind C H : pool -> Prop :=
-|rewindSingleNoTX : forall e, poolRewind C H (Single(None,nil,nil,e))
-|rewindSingleInTX : forall S e0 RS WS e, 
-                      rewind H (Some(S,e0),nil,nil,e0) (Some(S,e0),RS,WS,e) ->
-                      S < C -> poolRewind C H (Single(Some(S,e0),RS,WS,e))
+Inductive poolRewind (C : nat) (H : heap) : pool -> Prop :=
+|rewindSingleNoTX : forall tid e, poolRewind C H (Single(tid, None,nil,nil,e))
+|rewindSingleInTX : forall tid S e0 RS WS e H',
+                      releaseLocks S WS H H' ->
+                      rewind H' (tid, Some(S,e0),nil,nil,e0) H (tid, Some(S,e0),RS,WS,e) ->
+                      S < C -> poolRewind C H (Single(tid, Some(S,e0),RS,WS,e))
 |rewindPar : forall T1 T2, poolRewind C H T1 -> poolRewind C H T2 -> poolRewind C H (Par T1 T2). 
 
  
@@ -378,27 +385,29 @@ Qed.
 
 
 (*replay relation is transitive*)
-Theorem trans_replay: forall H t t' t'', 
-                         replay H t' t'' -> replay H t t' ->
-                         replay H t t''. 
+Theorem trans_replay: forall H H' H'' t t' t'', 
+                         replay H' t' H'' t'' -> replay H t H' t' ->
+                         replay H t H'' t''. 
 Proof.
-  intros H t t' t'' HYP1 HYP2. induction HYP2. auto. econstructor. eauto. auto. 
+  intros H H' H'' t t' t'' HYP1 HYP2. induction HYP2.
+  auto. econstructor. eauto. auto. 
 Qed. 
 
 (*rewind relation is transitive*)
-Theorem rewindTrans : forall H t t' t'', 
-                        rewind H t t' -> rewind H t' t'' ->
-                        rewind H t t''. 
+Theorem rewindTrans : forall H H' H'' t t' t'', 
+                        rewind H t H' t' -> rewind H' t' H'' t'' ->
+                        rewind H t H'' t''. 
 Proof.
-  intros H t t' t'' HYP1 HYP2. generalize dependent t. induction HYP2; intros; auto.
+  intros H H' H'' t t' t'' HYP1 HYP2. genDeps{{H; t}}.
+  induction HYP2; intros; auto.
   econstructor. eapply IHHYP2. assumption. assumption. 
 Qed. 
 
 (*replay and rewind are equivalent*)
-Theorem rewindIFFReplay : forall H t t', 
-                            rewind H t t' <-> replay H t t'. 
+Theorem rewindIFFReplay : forall H H' t t', 
+                            rewind H t H' t' <-> replay H t H' t'. 
 Proof.
-  intros H t t'. split; intros HYP. 
+  intros H H' t t'. split; intros HYP. 
   {induction HYP. constructor. eapply trans_replay; eauto.
    econstructor. eauto. constructor. }
   {induction HYP. constructor. eapply rewindTrans; eauto.
