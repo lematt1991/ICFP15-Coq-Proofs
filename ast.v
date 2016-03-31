@@ -39,11 +39,11 @@ Definition location := nat.
 (*timestamp used by the STM*)
 Definition stamp := nat. 
 
-(*log entry for STM metadata*)
-Inductive logItem : Type := 
-|readItem : location -> ctxt -> term -> logItem
-|writeItem : location -> term -> logItem
-. 
+Inductive log : bool -> Type :=
+|Read : forall b, location -> term -> log b -> log b
+|Chkpnt : location -> ctxt -> term -> log false -> log false
+|Write : forall b, location -> term -> log b -> log true
+|NilLog : log false. 
 
 Inductive lock : Type :=
 |Locked : nat -> nat -> lock     (*ID of thread who owns lock and previous version*)
@@ -52,16 +52,16 @@ Inductive lock : Type :=
 (*"Address" * contents * stamp*)
 Definition TVar := location * term * lock. 
 
-Definition read_set := list (location * ctxt * term).
-Definition write_set := list (location * term). 
-
 (*thread ID, start TX info, read set, write set, term*)
-Definition thread := nat * option (nat * term) * read_set * write_set * term. 
-
+Inductive thread : Type :=
+|noTXThread : nat -> term -> thread
+|txThread : forall b, nat -> nat -> term -> log b -> term -> thread
+.
+                   
 Inductive pool : Type := 
 |Single : thread -> pool
 |Par : pool -> pool -> pool. 
 
-
+Definition chkpnt := term * log false.
 
  
