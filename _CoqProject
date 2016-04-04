@@ -1,3 +1,5 @@
+-install none
+-R . ICFP
 ./ast.v
 ./fullImpliesPartial.v
 ./heap.v
