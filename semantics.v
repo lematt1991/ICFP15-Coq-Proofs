@@ -1,3 +1,4 @@
+Set Implicit Arguments.
 Require Export heap.           
 Require Export Omega.   
 Require Export hetList. 
@@ -20,7 +21,7 @@ Inductive decompose : term -> ctxt -> term -> Prop :=
                   decompose (put v e2) (putValCtxt v prf E) e
 |decompPutHole : forall n v, value v -> decompose (put (loc n) v) hole (put (loc n) v)
 |decompAlloc : forall e E e', decompose e E e' ->
-                              decompose (alloc e) (allocCtxt E) e'
+                         decompose (alloc e) (allocCtxt E) e'
 |decompAllocHole : forall v, value v -> decompose (alloc v) hole (alloc v)
 |decompAtomicHole : forall e, decompose (atomic e) hole (atomic e)
 |decompFork : forall e, decompose (fork e) hole (fork e)
@@ -101,10 +102,10 @@ Inductive validateRes : Type :=
 
 Inductive invalidStamp (tid : nat) (rv : nat) : lock -> Prop :=
 | StampStale : forall s, rv < s -> invalidStamp tid rv (Unlocked s)
-| StampLocked : forall s s', s <> tid -> invalidStamp tid rv (Locked s s'). 
+| StampLocked : forall s v s', s <> tid -> invalidStamp tid rv (Locked s s' v). 
 
 Inductive validStamp (tid : nat) (rv : nat) : lock -> Prop :=
-| LockOwned : forall s, validStamp tid rv (Locked tid s)
+| LockOwned : forall s' v, validStamp tid rv (Locked tid s' v)
 | StampFresh : forall s, rv > s -> validStamp tid rv (Unlocked s).
 
 (* Transactional log validation
@@ -119,41 +120,41 @@ Inductive validStamp (tid : nat) (rv : nat) : lock -> Prop :=
  *)
 
 Inductive readTail : forall b, log b -> log b -> Prop :=
-|cTail : forall l v E L, readTail false (Chkpnt l E v L) L
-|rTail : forall b l v L, readTail b (Read b l v L) L.  
+|cTail : forall l v E L, readTail (Chkpnt l E v L) L
+|rTail : forall b l v L, readTail (Read b l v L) L.  
 
 Inductive validate (tid : nat) (rv wv : nat) (e0 : term) : forall b, log b -> heap -> validateRes -> Prop :=
-|validNil : forall H, validate tid rv wv e0 false NilLog H (commit (e0, NilLog) H H)
-|validChkpnt : forall lock l v E H HI HV L chkpnt,
-                    lookup H l = Some(v, lock) -> validStamp tid rv lock ->
-                    validate tid rv wv e0 false L H (commit chkpnt HV HI) ->
-                    validate tid rv wv e0 false (Chkpnt l E v L) H (commit (fill E (get (loc l)), L) HV HI)
-|invalidChkpnt : forall lock l v E H HI HV L chkpnt,
-                   lookup H l = Some(v, lock) -> invalidStamp tid rv lock ->
-                   validate tid rv wv e0 false L H (commit chkpnt HI HV) ->
-                   validate tid rv wv e0 false (Chkpnt l E v L) H (abort (fill E (get (loc l)), L) HI)
-|validRead : forall b lock l v H HI HV L chkpnt,
-               lookup H l = Some(v, lock) -> validStamp tid rv lock ->
-               validate tid rv wv e0 b L H (commit chkpnt HI HV) ->
-               validate tid rv wv e0 b (Read b l v L) H (commit chkpnt HI HV)
-|invalidRead : forall b lock l v H HI HV L chkpnt,
-                 lookup H l = Some(v, lock) -> invalidStamp tid rv lock ->
-                 validate tid rv wv e0 b L H (commit chkpnt HI HV) ->
-                 validate tid rv wv e0 b (Read b l v L) H (abort chkpnt HI)
+|validNil : forall H, validate tid rv wv e0 NilLog H (commit (e0, NilLog) H H)
+|validChkpnt : forall lock l v v' E H HI HV L chkpnt,
+                    lookup H l = Some(v', lock) -> validStamp tid rv lock ->
+                    validate tid rv wv e0 L H (commit chkpnt HV HI) ->
+                    validate tid rv wv e0 (Chkpnt l E v L) H (commit (fill E (get (loc l)), L) HV HI)
+|invalidChkpnt : forall lock l v v' E H HI HV L chkpnt,
+                   lookup H l = Some(v', lock) -> invalidStamp tid rv lock ->
+                   validate tid rv wv e0 L H (commit chkpnt HI HV) ->
+                   validate tid rv wv e0 (Chkpnt l E v L) H (abort chkpnt(*(fill E (get (loc l)), L)*) HI)
+|validRead : forall b lock l v v' H HI HV L chkpnt,
+               lookup H l = Some(v', lock) -> validStamp tid rv lock ->
+               validate tid rv wv e0 L H (commit chkpnt HI HV) ->
+               validate tid rv wv e0 (Read b l v L) H (commit chkpnt HI HV)
+|invalidRead : forall b lock l v v' H HI HV L chkpnt,
+                 lookup H l = Some(v', lock) -> invalidStamp tid rv lock ->
+                 validate tid rv wv e0 L H (commit chkpnt HI HV) ->
+                 validate tid rv wv e0 (Read b l v L) H (abort chkpnt HI)
 |validWrite : forall l v v' H HI HV b (L : log b) chkpnt oldV,
-                lookup H l = Some(v, Locked tid oldV) ->
-                validate tid rv wv e0 b L H (commit chkpnt HI HV) ->
-                validate tid rv wv e0 true (Write b l v' L) H
+                lookup H l = Some(v, Locked tid oldV v') ->
+                validate tid rv wv e0 L H (commit chkpnt HI HV) ->
+                validate tid rv wv e0 (Write b l L) H
                          (commit chkpnt (update HI l v' (Unlocked oldV))
                                  (update HV l v (Unlocked wv)))
-|readPropAbort : forall H chkpnt HI b L L',
-                   validate tid rv wv e0 b L' H (abort chkpnt HI) ->
-                   readTail b L L' ->
-                   validate tid rv wv e0 b L H (abort chkpnt HI)
+|readPropAbort : forall b H chkpnt HI L L',
+                   validate tid rv wv e0 L' H (abort chkpnt HI) ->
+                   readTail L L' ->
+                   @validate tid rv wv e0 b L H (abort chkpnt HI)
 |writePropAbort : forall H chkpnt HI b l v v' oldV L,
-                    validate tid rv wv e0 b L H (abort chkpnt HI) ->
-                    lookup HI l = Some(v, Locked tid oldV) ->
-                    validate tid rv wv e0 true (Write b l v' L) H
+                    validate tid rv wv e0 L H (abort chkpnt HI) ->
+                    lookup H l = Some(v, Locked tid oldV v') ->
+                    validate tid rv wv e0 (Write b l L) H
                              (abort chkpnt (update HI l v' (Unlocked oldV))). 
 
 Fixpoint open (e:term) (k:nat) (e':term) :=
@@ -173,22 +174,30 @@ Fixpoint open (e:term) (k:nat) (e':term) :=
       |inatomic e => inatomic (open e k e')
   end. 
 
-Inductive acquireLock (l : location) (v : term) : forall b, log b -> nat -> lock -> lock -> log true -> Prop :=
-| acquireLocked : forall S S' L, acquireLock l v true L S (Locked S S') (Locked S S') L    (*already locked it*)
-| acquireUnlocked : forall b L S S',
-                      S' < S ->
-                      acquireLock l v b L S (Unlocked S') (Locked S S') (Write b l v L).    (*newly acquired*)
+
+Inductive acquireLock (l : location) (v : term) (tid rv : nat) : forall b, log b -> lock -> lock -> log true -> Prop :=
+| acquireLocked : forall L oldV,
+    Log.In l L -> (*already locked it*)
+    acquireLock l v tid rv L (Locked tid oldV v) (Locked tid oldV v) L    
+| acquireUnlocked : forall b L S',
+    S' < rv -> Log.notIn l b L -> (*newly acquired*)
+    acquireLock l v tid rv L (Unlocked S') (Locked tid S' v) (Write b l L).   
 
 Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
 (*read after write*)
-|t_readStep : forall S (L : log false) E l t tid v e0 lock H, 
-                decompose t E (get (loc l)) -> 
-                lookup H l = Some(v, lock) -> validStamp tid S lock ->
-                trans_step H (txThread false tid S e0 L t) H
-                           (txThread false tid S e0 (Chkpnt l E v L) (fill E v))
+|t_readChkpnt : forall S (L : log false) E l t tid v e0 lock H, 
+                  decompose t E (get (loc l)) -> 
+                  lookup H l = Some(v, lock) -> validStamp tid S lock ->
+                  trans_step H (txThread false tid S e0 L t) H
+                             (txThread false tid S e0 (Chkpnt l E v L) (fill E v))
+|t_readNoChkpnt : forall S b L E l t tid v e0 lock H, 
+                  decompose t E (get (loc l)) -> 
+                  lookup H l = Some(v, lock) -> validStamp tid S lock ->
+                  trans_step H (txThread b tid S e0 L t) H
+                             (txThread b tid S e0 (Read b l v L) (fill E v))
 |t_writeLocked : forall b S L tid E l L' t v v' e0 H lock lock',
                    decompose t E (put (loc l) v) ->
-                   lookup H l = Some(v', lock) -> acquireLock l v' b L tid lock lock' L' ->
+                   lookup H l = Some(v', lock) -> acquireLock l v' tid S L lock lock' L' ->
                    trans_step H (txThread b tid S e0 L t) (update H l v lock')
                               (txThread true tid S e0 L' (fill E unit))
 |t_atomicIdemStep : forall b E e t tid L H S e0,
@@ -201,11 +210,16 @@ Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
 
 Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
 (*read after write*)
-|r_readStepValid : forall S (L : log false) E l t tid v e0 lock H, 
+|r_readChkpnt : forall S (L : log false) E l t tid v e0 lock H, 
                 decompose t E (get (loc l)) -> 
                 lookup H l = Some(v, lock) -> validStamp tid S lock ->
                 replay_step H (txThread false tid S e0 L t) H
                             (txThread false tid S e0 (Chkpnt l E v L) (fill E v))
+|r_readNoChkpnt : forall S b L E l t tid v e0 lock H, 
+                  decompose t E (get (loc l)) -> 
+                  lookup H l = Some(v, lock) -> validStamp tid S lock ->
+                  replay_step H (txThread b tid S e0 L t) H
+                             (txThread b tid S e0 (Read b l v L) (fill E v))
 |r_readStepInvalid : forall b S L tid E H l t v e0 lock v', 
                        decompose t E (get (loc l)) -> 
                        lookup H l = Some(v, lock) -> invalidStamp tid S lock ->
@@ -213,14 +227,14 @@ Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
                                    (txThread b tid S e0 (Read b l v' L) (fill E v'))
 |r_writeLocked : forall b S L tid E l t v v' e0 H lock lock' L',
                    decompose t E (put (loc l) v) ->
-                   lookup H l = Some(v', lock) -> acquireLock l v' b L tid lock lock' L' ->
+                   lookup H l = Some(v', lock) -> acquireLock l v' tid S L lock lock' L' ->
                    replay_step H (txThread b tid S e0 L t) (update H l v lock')
                                (txThread true tid S e0 L' (fill E unit))
-|r_writeInvalid : forall b S L E tid l t v v' e0 H lock,
+(*|r_writeInvalid : forall b S L E tid l t v v' e0 H lock,
                     decompose t E (put (loc l) v) ->
                     lookup H l = Some(v', lock) -> invalidStamp tid S lock ->
                     replay_step H (txThread b tid S e0 L t) H
-                                (txThread b tid S e0 L (fill E unit))
+                                (txThread b tid S e0 L (fill E unit))  *)
 |r_atomicIdemStep : forall b E e t tid L H S e0,
                      decompose t E (atomic e) -> 
                      replay_step H (txThread b tid S e0 L t) H (txThread b tid S e0 L (fill E e))
@@ -262,10 +276,10 @@ Inductive c_step (st : step_sig) : step_sig :=
                    (Par (Single(noTXThread tid (fill E unit))) (Single(noTXThread (S tid) e)))
 |c_allocStep : forall C H v E t l tid, 
                lookup H l = None -> decompose t E (alloc v) ->
-               c_step st C H (Single(noTXThread tid t)) C ((l, v, Unlocked 0)::H)
+               c_step st C H (Single(noTXThread tid t)) C (update H l v (Unlocked 0))
                     (Single(noTXThread tid (fill E (loc l))))
 |c_commitStep : forall b C H HI HV chkpnt S L v t tid E e0, 
-                  validate tid S C e0 b L H (commit chkpnt HI HV) -> decompose t E (inatomic v) ->
+                  validate tid S C e0 L H (commit chkpnt HI HV) -> decompose t E (inatomic v) ->
                   c_step st C H (Single(txThread b tid S e0 L t)) (plus 1 C)
                          HV (Single(noTXThread tid (fill E v)))
 |c_atomicStep : forall C H E e t tid, 
@@ -277,14 +291,14 @@ Inductive c_step (st : step_sig) : step_sig :=
               c_step st C H (Single(noTXThread tid t)) C H
                      (Single(noTXThread tid (fill E (open e 0 v))))
 |c_tsExtend : forall b C H t S L e0 tid HI HV chkpnt,
-                validate tid S C e0 b L H (commit chkpnt HI HV) ->
+                validate tid S C e0 L H (commit chkpnt HI HV) ->
                 c_step st C H (Single(txThread b tid S e0 L t)) (plus 1 C) H
                        (Single(txThread b tid C e0 L t))
 .
 
 Inductive p_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
 |p_abortStep : forall b L L' S H H' tid C e e0 e', 
-                 validate tid S C e0 b L H (abort (e', L') H') ->
+                 validate tid S C e0 L H (abort (e', L') H') ->
                  p_step_ C H (Single(txThread b tid S e0 L e))
                         (plus 1 C) H' (Single(txThread false tid C e0 L' e'))
 .
@@ -292,7 +306,7 @@ Inductive p_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
 (*full abort STM semantics (single step)*)
 Inductive f_step_ : nat -> heap -> pool -> nat -> heap -> pool -> Prop :=
 |f_abortStep : forall b L L' S H H' tid C e e0 e', 
-                 validate tid S C e0 b L H (abort (e', L') H') ->
+                 validate tid S C e0 L H (abort (e', L') H') ->
                  f_step_ C H (Single(txThread b tid S e0 L e))
                         (plus 1 C) H' (Single(txThread false tid C e0 NilLog e0))
 . 
@@ -306,6 +320,12 @@ Inductive multistep (st : step_sig) : step_sig :=
 |c_multi_step : forall C H T C' H' T' C'' H'' T'', 
                   st C H T C' H' T' -> multistep st C' H' T' C'' H'' T'' ->
                   multistep st C H T C'' H'' T''. 
+
+Inductive multistep_rev (st : step_sig) : step_sig :=
+|c_multi_rev_refl : forall C H T, multistep_rev st C H T C H T
+|c_multi_rev_step : forall C H T C' H' T' C'' H'' T'', 
+    multistep_rev st C H T C' H' T' -> st C' H' T' C'' H'' T'' -> 
+    multistep_rev st C H T C'' H'' T''.
 
 Definition f_multistep := multistep f_step.
 Definition p_multistep := multistep p_step.
@@ -323,22 +343,9 @@ Definition postfix {A:Type} (L1 L2 : list A) := exists diff, L2 = diff ++ L1.
 (*all threads can rewind to their initial term of a transaction and have
 **a stamp number less than the global clock.  The stamp number 
 **constraint probably doesn't belong here, but its handy to have*)
-
-Inductive releaseLocks (tid : nat) : forall b, log b -> heap -> heap -> Prop :=
-|releaseNil : forall H, releaseLocks tid false NilLog H H
-|releaseWrite : forall b l v v' oldV L H H',
-                  releaseLocks tid b L H H' ->
-                  lookup H l = Some(v, Locked tid oldV) ->
-                  releaseLocks tid true (Write b l v' L) H (update H' l v' (Unlocked oldV))
-|releaseRead : forall b L L' H H',
-                 releaseLocks tid b L' H H' ->
-                 readTail b L L' ->
-                 releaseLocks tid b L H H'. 
-
 Inductive poolRewind (C : nat) (H : heap) : pool -> Prop :=
 |rewindSingleNoTX : forall tid e, poolRewind C H (Single(noTXThread tid e))
 |rewindSingleInTX : forall b tid S e0 L e H',
-                      releaseLocks tid b L H H' ->
                       rewind H' (txThread false tid S e0 NilLog e0) H (txThread b tid S e0 L e) ->
                       S < C -> poolRewind C H (Single(txThread b tid S e0 L e)) 
 |rewindPar : forall T1 T2, poolRewind C H T1 -> poolRewind C H T2 -> poolRewind C H (Par T1 T2). 
@@ -451,3 +458,35 @@ Proof.
   induction HYP1; auto. econstructor; eauto.
 Qed. 
 
+Theorem multi_rev_trans : forall st C H T C' H' T' C'' H'' T'',
+    multistep_rev st C H T C' H' T' ->
+    multistep_rev st C' H' T' C'' H'' T'' ->
+    multistep_rev st C H T C'' H'' T''.
+Proof.
+  intros st C H T C' H' T' C'' H'' T'' HYP1 HYP2. 
+  induction HYP2; auto.
+  econstructor; auto.
+Qed. 
+
+Theorem multistep_rev_forward : forall st C H T C' H' T',
+    multistep st C H T C' H' T' -> multistep_rev st C H T C' H' T'.
+Proof.
+  intros. induction H0.
+  {constructor. }
+  {eapply multi_rev_trans. eapply c_multi_rev_step. constructor.
+   eauto. eauto. }
+Qed. 
+
+Theorem multistep_rev_backward : forall st C H T C' H' T',
+    multistep_rev st C H T C' H' T' -> multistep st C H T C' H' T'. 
+  intros. induction H0.
+  {constructor. }
+  {eapply multi_trans. eauto. eapply c_multi_step. eauto. constructor. }
+Qed. 
+
+Theorem multistep_rev_eq : forall st C H T C' H' T',
+    multistep st C H T C' H' T' <-> multistep_rev st C H T C' H' T'. 
+Proof.
+  intros. split. apply multistep_rev_forward.
+  apply multistep_rev_backward.
+Qed. 

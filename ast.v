@@ -1,4 +1,3 @@
-Require Export Coq.Init.Datatypes. 
 Require Export List. 
 Export ListNotations. 
 Require Export tactics.
@@ -42,11 +41,27 @@ Definition stamp := nat.
 Inductive log : bool -> Type :=
 |Read : forall b, location -> term -> log b -> log b
 |Chkpnt : location -> ctxt -> term -> log false -> log false
-|Write : forall b, location -> term -> log b -> log true
-|NilLog : log false. 
+|Write : forall b, location -> log b -> log true
+|NilLog : log false.
+
+Module Log.
+
+  Inductive notIn (l : location) : forall b, log b -> Prop :=
+  |notInNil : notIn l false NilLog
+  |notInRead : forall l' v' b L, notIn l b L -> notIn l b (Read b l' v' L)
+  |notInChkpnt : forall l' v E L, notIn l false L -> notIn l false (Chkpnt l' v E L)
+  |notInWrite : forall l' b L, l <> l' -> notIn l b L -> notIn l true (Write b l' L). 
+  
+  Inductive In (l : location) : log true -> Prop :=
+  |InRead : forall l' v L, In l L -> In l (Read true l' v L)
+  |InWrite : forall b L, notIn l b L -> In l (Write b l L)
+  |InWriteNext : forall L l',
+                   l <> l' ->
+                   In l L -> In l (Write true l' L). 
+End Log. 
 
 Inductive lock : Type :=
-|Locked : nat -> nat -> lock     (*ID of thread who owns lock and previous version*)
+|Locked : nat -> nat -> term -> lock     (*ID of thread who owns lock, previous stamp and previous val*)
 |Unlocked : nat -> lock   (*version number*)
 . 
 (*"Address" * contents * stamp*)

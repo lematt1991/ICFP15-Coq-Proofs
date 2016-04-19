@@ -1,7 +1,4 @@
 (*Library for heterogeneous lists*)
-Inductive Het : Type :=
-|HetConstr : forall A, A -> Het. 
-
 Inductive hlist : Type :=
 | HNil : hlist
 | HCons : forall {A},  A -> hlist -> hlist. 
