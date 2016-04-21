@@ -79,4 +79,5 @@ Inductive pool : Type :=
 
 Definition chkpnt := term * log false.
 
- 
+Inductive locked (tid : nat) : lock -> Prop :=
+|acquired : forall oldV v, locked tid (Locked tid oldV v). 

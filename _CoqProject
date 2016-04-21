@@ -1,5 +1,7 @@
 -install none
 -R . ICFP
+./noninterference.v
+./validateWrite.v
 ./ast.v
 ./fullImpliesPartial.v
 ./heap.v

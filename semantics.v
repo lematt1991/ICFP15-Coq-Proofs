@@ -100,13 +100,19 @@ Inductive validateRes : Type :=
 |commit : chkpnt -> heap -> heap -> validateRes 
 |abort : chkpnt -> heap -> validateRes. 
 
+Definition invalidHeap res :=
+  match res with
+  |commit _ H _ => H
+  |abort _ H => H
+  end. 
+
 Inductive invalidStamp (tid : nat) (rv : nat) : lock -> Prop :=
 | StampStale : forall s, rv < s -> invalidStamp tid rv (Unlocked s)
 | StampLocked : forall s v s', s <> tid -> invalidStamp tid rv (Locked s s' v). 
 
 Inductive validStamp (tid : nat) (rv : nat) : lock -> Prop :=
 | LockOwned : forall s' v, validStamp tid rv (Locked tid s' v)
-| StampFresh : forall s, rv > s -> validStamp tid rv (Unlocked s).
+| StampFresh : forall s, rv >= s -> validStamp tid rv (Unlocked s).
 
 (* Transactional log validation
  * Validate RV L H WV Res
@@ -180,7 +186,7 @@ Inductive acquireLock (l : location) (v : term) (tid rv : nat) : forall b, log b
     Log.In l L -> (*already locked it*)
     acquireLock l v tid rv L (Locked tid oldV v) (Locked tid oldV v) L    
 | acquireUnlocked : forall b L S',
-    S' < rv -> Log.notIn l b L -> (*newly acquired*)
+    rv >= S' -> Log.notIn l b L -> (*newly acquired*)
     acquireLock l v tid rv L (Unlocked S') (Locked tid S' v) (Write b l L).   
 
 Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
@@ -208,6 +214,11 @@ Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
               trans_step H (txThread b tid S e0 L t) H (txThread b tid S e0 L (fill E (open e 0 v)))
 .
 
+(*if lock is acquired, then read backed up value, otherwise pull a value out of thin air*)
+Inductive mkVal : lock -> term -> Prop :=
+| mkLocked : forall tid oldV v, mkVal (Locked tid oldV v) v
+| mkUnlocked : forall stamp v, mkVal (Unlocked stamp) v. 
+
 Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
 (*read after write*)
 |r_readChkpnt : forall S (L : log false) E l t tid v e0 lock H, 
@@ -221,7 +232,7 @@ Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
                   replay_step H (txThread b tid S e0 L t) H
                              (txThread b tid S e0 (Read b l v L) (fill E v))
 |r_readStepInvalid : forall b S L tid E H l t v e0 lock v', 
-                       decompose t E (get (loc l)) -> 
+                       decompose t E (get (loc l)) -> mkVal lock v' ->
                        lookup H l = Some(v, lock) -> invalidStamp tid S lock ->
                        replay_step H (txThread b tid S e0 L t) H
                                    (txThread b tid S e0 (Read b l v' L) (fill E v'))
@@ -230,11 +241,6 @@ Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
                    lookup H l = Some(v', lock) -> acquireLock l v' tid S L lock lock' L' ->
                    replay_step H (txThread b tid S e0 L t) (update H l v lock')
                                (txThread true tid S e0 L' (fill E unit))
-(*|r_writeInvalid : forall b S L E tid l t v v' e0 H lock,
-                    decompose t E (put (loc l) v) ->
-                    lookup H l = Some(v', lock) -> invalidStamp tid S lock ->
-                    replay_step H (txThread b tid S e0 L t) H
-                                (txThread b tid S e0 L (fill E unit))  *)
 |r_atomicIdemStep : forall b E e t tid L H S e0,
                      decompose t E (atomic e) -> 
                      replay_step H (txThread b tid S e0 L t) H (txThread b tid S e0 L (fill E e))
