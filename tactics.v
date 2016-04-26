@@ -28,11 +28,14 @@ Ltac proofsEq :=
 (*If inversion produces the same hypothesis, skip it, otherwise invert all equalities*)
 Ltac invertEq :=
   match goal with
-  |H:?a = ?b |- _ => let n := fresh
-                   in inversion H as n; match type of n with
-                                          |?a = ?b => fail
-                                        end
-  |H:?a = ?b |- _ => inv H
+  | H : ?a = ?b |- _ =>
+    let n := fresh
+    in (inversion H as (n34);
+       match type of n with
+       | ?a = ?b => fail
+       | ?b = ?a => fail
+       | _ => clear H; subst
+       end)
   end.
 
 Ltac transEq :=
@@ -64,9 +67,6 @@ Qed.
 
 Ltac simplEq l l' :=
   match goal with
-  |H : l = l |- _ =>
-   replace (PeanoNat.Nat.eq_dec l l) with ((left H) : {l = l} + {l <> l});
-   [idtac|symmetry; apply rewriteEq]
   |H : l <> l' |- _ =>
    replace (PeanoNat.Nat.eq_dec l l') with ((right H) : {l = l'} + {l <> l'});
    [idtac|symmetry; apply rewriteNeq]
@@ -74,4 +74,12 @@ Ltac simplEq l l' :=
    rewrite neqSymm in H; 
    replace (PeanoNat.Nat.eq_dec l l') with ((right H) : {l = l'} + {l <> l'});
    [idtac|symmetry; apply rewriteNeq]
+  | _ =>
+    match l' with
+    |l =>
+     let n := fresh
+     in assert(n : l = l) by auto;
+        replace (PeanoNat.Nat.eq_dec l l) with ((left n) : {l = l} + {l <> l});
+        [idtac | symmetry; apply rewriteEq]
+    end
   end.

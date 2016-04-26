@@ -7,8 +7,6 @@ Definition heap := location -> option (term*lock).
 
 Definition emptyHeap : heap := fun _ => None. 
 
-Definition lookup (H:heap) l := H l. 
-
 Definition update H l v stamp : heap :=
   fun l' => if eq_nat_dec l l'
          then Some (v, stamp)
@@ -22,10 +20,10 @@ Proof.
 Qed. 
 
 Theorem lookupUpdate : forall H l v lock v' lock',
-                         lookup H l = Some(v', lock') -> 
-                         lookup (update H l v lock) l = Some(v, lock). 
+                         H l = Some(v', lock') -> 
+                         (update H l v lock) l = Some(v, lock). 
 Proof.
-  intros. unfold update. unfold lookup. destruct (PeanoNat.Nat.eq_dec l l); auto.
+  intros. unfold update. destruct (PeanoNat.Nat.eq_dec l l); auto.
   exfalso. apply n. auto.
 Qed. 
 
@@ -37,12 +35,12 @@ Proof.
 Qed. 
 
 Theorem updateIdempotent : forall H l v lock,
-                             lookup H l  = Some(v, lock) ->
+                             H l  = Some(v, lock) ->
                              update H l v lock = H.
 Proof.
   intros H l v lock H0. apply heapExt. intros. unfold update.
   destruct (PeanoNat.Nat.eq_dec l l0).
-  {subst. unfold lookup in H0. rewrite H0. reflexivity. }
+  {subst. rewrite H0. reflexivity. }
   {auto. }
 Qed. 
   

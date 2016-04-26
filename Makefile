@@ -79,6 +79,7 @@ COQMKTOP?="$(COQBIN)coqmktop"
 ######################
 
 VFILES:=noninterference.v\
+  stepPreservesUniqueness.v\
   validateWrite.v\
   ast.v\
   fullImpliesPartial.v\

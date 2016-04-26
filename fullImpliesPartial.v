@@ -1,19 +1,6 @@
 Require Export stepPreservesRewind.  
   
-(*AheadOf H t1 t2: t2 is in t1's future with respect to heap H*)
-Inductive AheadOf H : thread -> thread -> Prop :=
-|noTXAheadOf : forall e, AheadOf H (None, nil, e) (None, nil, e)
-|inTXAheadOf : forall S e0 L L' e e', 
-                 replay H (Some(S,e0),L,e) (Some(S,e0),L',e') ->
-                 AheadOf H (Some(S,e0),L,e) (Some(S,e0),L',e').
-
-(*Generalizes the previous relation to thread pools*)
-Inductive poolAheadOf H : pool -> pool -> Prop := 
-|SingleAheadOf : forall t t', AheadOf H t t' -> poolAheadOf H (Single t) (Single t')
-|ParAheadOf : forall T1 T2 T1' T2', 
-           poolAheadOf H T1 T1' -> poolAheadOf H T2 T2' -> 
-           poolAheadOf H (Par T1 T2) (Par T1' T2'). 
-
+(*
 (*
  * If we can replay from one state to another and the first state is
  * invalid, then the second one must be too
@@ -103,6 +90,16 @@ Proof.
   intros. dependent induction H0; auto.
   inv H0; eapply IHreplay; eauto; eapply validateAbortPropogate; eauto. 
 Qed. 
+ *)
+
+Inductive poolReplay : heap -> pool -> heap -> pool -> Prop :=
+| replayNoTX : forall H tid e, poolReplay H (Single(noTXThread tid e)) H (Single(noTXThread tid e))
+| replayTX : forall H H' tid rv b b' e0 L L' e e',
+    replay H (txThread b tid rv e0 L e) H' (txThread b' tid rv e0 L' e') ->
+    poolReplay H (Single(txThread b tid rv e0 L e)) H' (Single(txThread b' tid rv e0 L' e'))
+| replayPar : forall H H1' H2' T1 T2 T1' T2',
+    poolReplay H T1 H1' T1' -> poolReplay H T2 H2' T2' ->
+    poolReplay H 
 
 (*partial abort can simulate full abort*)
 Theorem fullImpliesPartial : forall C H T C' H' T' PT, 
