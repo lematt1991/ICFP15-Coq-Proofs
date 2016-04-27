@@ -127,7 +127,7 @@ Inductive validStamp (tid : nat) (rv : nat) : lock -> Prop :=
 
 Inductive readTail : forall b, log b -> log b -> Prop :=
 |cTail : forall l v E L, readTail (Chkpnt l E v L) L
-|rTail : forall b l v L, readTail (Read b l v L) L.  
+|rTail : forall l v L, readTail (Read l v L) L.  
 
 Inductive validate (tid : nat) (rv wv : nat) (e0 : term) : forall b, log b -> heap -> validateRes -> Prop :=
 |validNil : forall H, validate tid rv wv e0 NilLog H (commit (e0, NilLog) H H)
@@ -139,14 +139,14 @@ Inductive validate (tid : nat) (rv wv : nat) (e0 : term) : forall b, log b -> he
                    H l = Some(v', lock) -> invalidStamp tid rv lock ->
                    validate tid rv wv e0 L H (commit chkpnt HI HV) ->
                    validate tid rv wv e0 (Chkpnt l E v L) H (abort chkpnt(*(fill E (get (loc l)), L)*) HI)
-|validRead : forall b lock l v v' H HI HV L chkpnt,
+|validRead : forall lock l v v' H HI HV L chkpnt,
                H l = Some(v', lock) -> validStamp tid rv lock ->
                validate tid rv wv e0 L H (commit chkpnt HI HV) ->
-               validate tid rv wv e0 (Read b l v L) H (commit chkpnt HI HV)
-|invalidRead : forall b lock l v v' H HI HV L chkpnt,
+               validate tid rv wv e0 (Read l v L) H (commit chkpnt HI HV)
+|invalidRead : forall lock l v v' H HI HV L chkpnt,
                  H l = Some(v', lock) -> invalidStamp tid rv lock ->
                  validate tid rv wv e0 L H (commit chkpnt HI HV) ->
-                 validate tid rv wv e0 (Read b l v L) H (abort chkpnt HI)
+                 validate tid rv wv e0 (Read l v L) H (abort chkpnt HI)
 |validWrite : forall l v v' H HI HV b (L : log b) chkpnt oldV,
                 H l = Some(v, Locked tid oldV v') -> rv >= oldV -> Log.notIn l b L ->
                 validate tid rv wv e0 L H (commit chkpnt HI HV) -> 
@@ -166,17 +166,17 @@ Inductive validate (tid : nat) (rv wv : nat) (e0 : term) : forall b, log b -> he
 Ltac invertHyp :=
   match goal with
   |H : readTail (Chkpnt ?l ?E ?v ?L) ?L' |- _ => dependent destruction H; try invertHyp
-  |H : readTail (Read ?b ?l ?v ?L) ?L' |- _ => dependent destruction H; try invertHyp
+  |H : readTail (Read ?l ?v ?L) ?L' |- _ => dependent destruction H; try invertHyp
   |H : readTail (Write ?b ?l ?L) ?L' |- _ => dependent destruction H
   |H : readTail NilLog ?L' |- _ => dependent destruction H
-  |H : validate ?tid ?S ?C ?e0 (Read ?b ?l ?v ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
+  |H : validate ?tid ?S ?C ?e0 (Read ?l ?v ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
   |H : validate ?tid ?S ?C ?e0 (Chkpnt ?l ?E ?v ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
   |H : validate ?tid ?S ?C ?e0 (Write ?b ?l ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
   |H : Log.notIn ?l ?b (Chkpnt ?l' ?E ?v ?L) |- _ => dependent destruction H; try invertHyp
-  |H : Log.notIn ?l ?b (Read ?b' ?l' ?v ?L) |- _ => dependent destruction H; try invertHyp
+  |H : Log.notIn ?l ?b (Read ?l' ?v ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.notIn ?l ?b (Write ?b' ?l' ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.In ?l (Chkpnt ?l' ?E ?v ?L) |- _ => dependent destruction H; try invertHyp
-  |H : Log.In ?l (Read ?b' ?l' ?v ?L) |- _ => dependent destruction H; try invertHyp
+  |H : Log.In ?l (Read ?l' ?v ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.In ?l (Write ?b' ?l' ?L) |- _ => dependent destruction H; try invertHyp
   | _ => tactics.invertHyp
   end.
@@ -214,11 +214,11 @@ Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
                   H l = Some(v, lock) -> validStamp tid S lock ->
                   trans_step H (txThread false tid S e0 L t) H
                              (txThread false tid S e0 (Chkpnt l E v L) (fill E v))
-|t_readNoChkpnt : forall S b L E l t tid v e0 lock H, 
+|t_readNoChkpnt : forall S L E l t tid v e0 lock H, 
                   decompose t E (get (loc l)) -> 
                   H l = Some(v, lock) -> validStamp tid S lock ->
-                  trans_step H (txThread b tid S e0 L t) H
-                             (txThread b tid S e0 (Read b l v L) (fill E v))
+                  trans_step H (txThread true tid S e0 L t) H
+                             (txThread true tid S e0 (Read l v L) (fill E v))
 |t_writeLocked : forall b S L tid E l L' t v v' e0 H lock lock',
                    decompose t E (put (loc l) v) ->
                    H l = Some(v', lock) -> acquireLock l v' tid S L lock lock' L' ->
@@ -240,7 +240,7 @@ Inductive mkVal (rv : nat) : lock -> term -> Prop :=
 
 Inductive readOrChkpnt l v E : forall b, log b -> log b -> Prop :=
 |chkpnt : forall tail, @readOrChkpnt l v E false tail (Chkpnt l E v tail)
-|nochkpnt : forall b tail, @readOrChkpnt l v E b tail (Read b l v tail). 
+|nochkpnt : forall tail, @readOrChkpnt l v E true tail (Read l v tail). 
 
 Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
 (*read after write*)
@@ -249,11 +249,11 @@ Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
                 H l = Some(v, lock) -> validStamp tid S lock ->
                 replay_step H (txThread false tid S e0 L t) H
                             (txThread false tid S e0 (Chkpnt l E v L) (fill E v))
-|r_readNoChkpnt : forall S b L E l t tid v e0 lock H, 
+|r_readNoChkpnt : forall S L E l t tid v e0 lock H, 
                   decompose t E (get (loc l)) -> 
                   H l = Some(v, lock) -> validStamp tid S lock ->
-                  replay_step H (txThread b tid S e0 L t) H
-                             (txThread b tid S e0 (Read b l v L) (fill E v))
+                  replay_step H (txThread true tid S e0 L t) H
+                             (txThread true tid S e0 (Read l v L) (fill E v))
 |r_readStepInvalid : forall b S L tid E H l t v e0 lock v' L', 
                        decompose t E (get (loc l)) -> mkVal S lock v' ->
                        H l = Some(v, lock) -> invalidStamp tid S lock ->

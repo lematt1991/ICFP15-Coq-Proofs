@@ -30,10 +30,10 @@ Ltac invertEq :=
   match goal with
   | H : ?a = ?b |- _ =>
     let n := fresh
-    in (inversion H as (n34);
+    in (inversion H as (n);
        match type of n with
-       | ?a = ?b => fail
-       | ?b = ?a => fail
+       | a = b => fail 1
+       | b = a => fail 1
        | _ => clear H; subst
        end)
   end.

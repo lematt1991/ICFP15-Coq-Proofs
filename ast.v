@@ -39,7 +39,7 @@ Definition location := nat.
 Definition stamp := nat. 
 
 Inductive log : bool -> Type :=
-|Read : forall b, location -> term -> log b -> log b
+|Read : location -> term -> log true -> log true
 |Chkpnt : location -> ctxt -> term -> log false -> log false
 |Write : forall b, location -> log b -> log true
 |NilLog : log false.
@@ -48,12 +48,12 @@ Module Log.
 
   Inductive notIn (l : location) : forall b, log b -> Prop :=
   |notInNil : notIn l false NilLog
-  |notInRead : forall l' v' b L, notIn l b L -> notIn l b (Read b l' v' L)
+  |notInRead : forall l' v' L, notIn l true L -> notIn l true (Read l' v' L)
   |notInChkpnt : forall l' v E L, notIn l false L -> notIn l false (Chkpnt l' v E L)
   |notInWrite : forall l' b L, l <> l' -> notIn l b L -> notIn l true (Write b l' L). 
   
   Inductive In (l : location) : log true -> Prop :=
-  |InRead : forall l' v L, In l L -> In l (Read true l' v L)
+  |InRead : forall l' v L, In l L -> In l (Read l' v L)
   |InWrite : forall b L, notIn l b L -> In l (Write b l L)
   |InWriteNext : forall L l',
                    l <> l' ->

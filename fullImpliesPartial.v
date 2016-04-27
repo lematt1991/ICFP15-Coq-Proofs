@@ -92,103 +92,130 @@ Proof.
 Qed. 
  *)
 
-Inductive poolReplay : heap -> pool -> heap -> pool -> Prop :=
-| replayNoTX : forall H tid e, poolReplay H (Single(noTXThread tid e)) H (Single(noTXThread tid e))
-| replayTX : forall H H' tid rv b b' e0 L L' e e',
+Inductive AheadOf (H : heap) : pool -> pool -> Prop :=
+| aheadOfNoTX : forall tid e, AheadOf H (Single(noTXThread tid e)) (Single(noTXThread tid e))
+| aheadOfTX : forall tid rv b b' e0 L L' e e' H',
     replay H (txThread b tid rv e0 L e) H' (txThread b' tid rv e0 L' e') ->
-    poolReplay H (Single(txThread b tid rv e0 L e)) H' (Single(txThread b' tid rv e0 L' e'))
-| replayPar : forall H H1' H2' T1 T2 T1' T2',
-    poolReplay H T1 H1' T1' -> poolReplay H T2 H2' T2' ->
-    poolReplay H 
+    AheadOf H (Single(txThread b tid rv e0 L e)) (Single(txThread b' tid rv e0 L' e'))
+| replayPar : forall T1 T2 T1' T2',
+    AheadOf H T1 T1' -> AheadOf H T2 T2' ->
+    AheadOf H (Par T1 T2) (Par T1' T2'). 
+
+Ltac sameStep :=
+  match goal with
+  |H : decompose ?t ?E ?e, H' : decompose ?t ?E' ?e' |- _ =>
+   eapply decomposeDeterministic in H; eauto; invertHyp; repeat invertEq
+  end. 
 
 (*partial abort can simulate full abort*)
 Theorem fullImpliesPartial : forall C H T C' H' T' PT, 
-                               f_step C H T C' H' T' -> poolAheadOf H T PT ->
+                               f_step C H T C' H' T' -> AheadOf H T PT ->
                                poolRewind C H PT -> 
                                exists PT', p_multistep C H PT C' H' PT' /\
-                                           poolAheadOf H' T' PT'.
+                                           AheadOf H' T' PT'.
 Proof.
   intros. generalize dependent PT. induction H0; intros. 
-  {inv H1. inv H4. 
-   {inv H0; exfalso; apply H7; auto. }
-   {inv H1. 
-    {econstructor. split. eapply p_multi_step. eapply p_transStep. 
-     eauto. constructor. constructor. inv H0; repeat constructor. }
-    {econstructor. split. constructor. constructor. Hint Constructors AheadOf.
-     inv H0; inv H3; decompSame; invertEq; repeat lookupSame; auto. omega. }
-   }
-  } 
-  {eapply f_stampHeapMonotonic in H0. invertHyp. inv H1. eapply IHf_step in H6. 
-   invertHyp. econstructor. split. eapply p_multi_L. eauto. constructor. auto.
-   inv H2. eapply poolAheadOfExtension; eauto. inv H2. auto. }
-  {eapply f_stampHeapMonotonic in H0. invertHyp. inv H1. eapply IHf_step in H8. 
-   invertHyp. econstructor. split. eapply p_multi_R. eauto. constructor. inv H2. 
-   eapply poolAheadOfExtension; eauto. auto. auto. inv H2. auto. 
+  {(*lifted step (full abort)*)
+    inv H0. dependent destruction H1. admit. }
+  {(*transactional step*)
+    dependent destruction H0.
+    {(*checkpoint read*)
+      dependent destruction H3. dependent destruction H4.
+      dependent destruction H3.
+      {econstructor. split. eapply c_multi_step.
+       eapply c_transStep. econstructor; eauto. constructor.
+       econstructor. constructor. }
+      {dependent destruction H4; sameStep. 
+       {transEq. invertEq. econstructor. split. constructor.
+        econstructor. eauto. }
+       {transEq. invertEq. exfalso. eapply validInvalidStamp; eauto. }
+      }
+    }
+    {(*non-checkpoint read*)
+      dependent destruction H3. dependent destruction H4.
+      dependent destruction H3.
+      {econstructor. split. eapply c_multi_step.
+       eapply c_transStep. econstructor; eauto. constructor.
+       econstructor. constructor. }
+      {dependent destruction H4; sameStep. 
+       {transEq. invertEq. econstructor. split. constructor.
+        econstructor. eauto. }
+       {transEq. invertEq. exfalso. eapply validInvalidStamp; eauto. }
+      }
+    }
+    {(*write*)
+      dependent destruction H3. dependent destruction H4.
+      dependent destruction H3.
+      {econstructor. split. eapply c_multi_step.
+       eapply c_transStep. econstructor; eauto. constructor.
+       econstructor. constructor. }
+      {dependent destruction H4; sameStep. econstructor. admit. }
+    }
+    {dependent destruction H1. dependent destruction H2.
+     dependent destruction H1.
+     {econstructor. split. eapply c_multi_step.
+      eapply c_transStep. eapply t_atomicIdemStep; eauto.
+      constructor. econstructor. constructor. }
+     {dependent destruction H1; sameStep. econstructor.
+      split. constructor. econstructor. eauto. }
+    }
+    {dependent destruction H1. dependent destruction H2.
+     dependent destruction H1.
+     {econstructor. split. eapply c_multi_step.
+      eapply c_transStep. eapply t_betaStep; eauto.
+      constructor. econstructor. constructor. }
+     {dependent destruction H1; sameStep. econstructor.
+      split. constructor. econstructor. eauto. }
+    }
   }
-  {inv H1. inv H4. econstructor. split. eapply p_multi_step.
-   eapply p_forkStep; eauto. constructor. repeat constructor. }
-  {inv H5. inv H8. inv H12. 
-   {econstructor. split. eapply p_multi_step. eapply p_eagerAbort; eauto.
-    constructor. repeat constructor. inv H6. rewrite <- rewindIFFReplay.
-    assert(rewind H (Some(S,e0),nil,e0) (Some(S,e0),(readItem l E v :: L'0), fill E v)). 
-    econstructor. eauto. eapply r_readStepInvalid; eauto. omega. copy H2.
-    eapply validateValidate in H2; eauto. invertHyp. 
-    eapply rewindDiffStamp; eauto. eapply rewindValidPortion; eauto. }
-   {inv H5; decompSame; try invertEq. 
-    {invertEq. repeat lookupSame. omega. }
-    {invertEq. repeat lookupSame.
-     assert(validate S (readItem l E v0::L) H C (abort e' L')). inv H2. 
-     eapply validateAbortPropogate; eauto. eapply validateAbortRead; eauto. 
-     econstructor. split. eapply p_multi_step. eapply p_abortStep. 
-     eapply abortReplay; eauto. rewrite plus_comm. constructor. repeat constructor. 
-     inv H6. rewrite <- rewindIFFReplay. copy H7. 
-     eapply validateValidate in H3. invertHyp. eapply rewindDiffStamp; eauto.
-     eapply rewindValidPortion. eauto. eapply abortReplay in H7. eauto. 
-     inv H2. eapply validateAbortPropogate; eauto. eapply validateAbortRead; eauto. }
-    {invertEq. repeat lookupSame. }
-   }
+  {inv H1. dependent destruction H2. eapply IHc_step in H5; eauto.
+   invertHyp. econstructor. split. eapply multi_L. eauto.
+   econstructor; eauto. admit. (*we need another noninterference lemma for replay*)
   }
-  {inv H1. inv H4. eapply replayInvalid in H8; eauto. invertHyp. 
-   econstructor. split. econstructor. eapply p_abortStep; eauto. constructor. 
-   constructor. constructor. inv H2. eapply rewindValidPortion in H5; eauto.
-   eapply validateValidate in H3. invertHyp. eapply rewindDiffStamp in H5; eauto. 
-   rewrite <- rewindIFFReplay. auto. }
-  {inv H2. inv H5. econstructor. split. econstructor.
-   eapply p_allocStep; eauto. constructor. repeat constructor. }
-  {inv H2. inv H5. inv H9. 
-   {econstructor. split. econstructor. eapply p_commitStep; eauto. 
-    constructor. repeat constructor. }
-   {inv H2; try solve[decompSame; solveByInv]. }
+  {inv H1. dependent destruction H2. eapply IHc_step in H7; eauto.
+   invertHyp. econstructor. split. eapply multi_R. eauto.
+   econstructor; eauto. admit. (*we need another noninterference lemma for replay*)
   }
-  {inv H1. inv H4. econstructor. split. econstructor. 
-   eapply p_atomicStep; eauto. constructor. constructor. 
-   eapply inTXAheadOf. constructor. }
-  {inv H1. inv H4. econstructor. split. eapply p_multi_step. 
-   eapply p_betaStep; eauto. constructor. repeat constructor. }
-Qed. 
+  {inv H1. inv H2. econstructor. split. eapply c_multi_step.
+   eapply c_forkStep; eauto. constructor. repeat constructor. }
+  {inv H2. inv H3. econstructor. split. eapply c_multi_step.
+   eapply c_allocStep; eauto. constructor. constructor. }
+  {dependent destruction H2. dependent destruction H3.
+   dependent destruction H2.
+   {econstructor. split. eapply c_multi_step. eapply c_commitStep; eauto.
+    constructor. constructor. }
+   {dependent destruction H2; sameStep. }
+  }
+  {inv H1. inv H2. econstructor. split. eapply c_multi_step.
+   eapply c_atomicStep; eauto. constructor. econstructor. 
+   econstructor. }
+  {inv H1. inv H2. econstructor. split. eapply c_multi_step.
+   eapply c_betaStep; eauto. constructor. constructor. }
+  {admit. }
+Admitted. 
 
 (*generalize step preserves rewind to thread pools*)
 Theorem multistepPreservesRewind : forall C H T C' H' T',
                                 poolRewind C H T -> p_multistep C H T C' H' T' ->
                                 poolRewind C' H' T'. 
 Proof.
-  intros. induction H1. auto. apply IHp_multistep.
+  intros. induction H1. auto. apply IHmultistep.
   eapply p_stepRewind; eauto. 
 Qed. 
 
 (*generalize full implies partial to thread pools*)
 Theorem fullImpliesPartialMulti : forall C H T C' H' T' PT, 
-                               f_multistep C H T C' H' T' -> poolAheadOf H T PT ->
+                               f_multistep C H T C' H' T' -> AheadOf H T PT ->
                                poolRewind C H PT ->
                                exists PT', p_multistep C H PT C' H' PT' /\
-                                           poolAheadOf H' T' PT'.
+                                           AheadOf H' T' PT'.
 Proof.
   intros. generalize dependent PT. induction H0; intros. 
   {exists PT. split. constructor. auto. }
   {copy H0. eapply fullImpliesPartial in H0; eauto. invertHyp. 
    copy H0. apply multistepPreservesRewind in H5; auto. 
-   eapply IHf_multistep in H6; eauto. invertHyp. exists x0. split. 
-   eapply p_multi_trans; eauto. auto. }
+   eapply IHmultistep in H6; eauto. invertHyp. exists x0. split. 
+   eapply multi_trans; eauto. auto. }
 Qed. 
 
 
