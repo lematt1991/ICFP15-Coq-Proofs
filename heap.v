@@ -53,4 +53,13 @@ Proof.
   destruct (PeanoNat.Nat.eq_dec l' l0); destruct (PeanoNat.Nat.eq_dec l l0); auto.
   subst. exfalso; auto.
 Qed. 
-  
+
+Theorem heapPullOut : forall H l v lock,
+    H l = Some(v, lock)  ->
+    exists H', H = update H' l v lock. 
+Proof.
+  intros. exists (fun l' => if PeanoNat.Nat.eq_dec l l' then Some(v, lock) else H l'). 
+  apply heapExt. intros. unfold update. destruct (PeanoNat.Nat.eq_dec l l0).
+  {subst. auto. }
+  {auto. }
+Qed. 

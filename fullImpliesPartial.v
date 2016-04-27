@@ -1,4 +1,29 @@
 Require Export stepPreservesRewind.  
+
+
+(*
+ * If we can replay from one state to another and the first state is
+ * invalid, then the second one must be too
+ *)
+Theorem replayInvalid : forall b1 b2 H H' rv wv tid e0 L e L' e' chkpnt HI, 
+                          replay H (txThread b1 tid rv e0 L e) H' (txThread b2 tid rv e0 L' e') ->
+                          validate tid rv wv e0 L H (abort chkpnt HI) ->
+                          validate tid rv wv e0 L' H (abort chkpnt HI).
+Proof.
+  intros. dependent induction H0; auto.
+  dependent destruction H0; eauto. 
+  {eapply IHreplay; eauto. eapply readPropAbort; eauto.
+   constructor. }
+  {eapply IHreplay; eauto. eapply readPropAbort; eauto.
+   constructor. }
+  {eapply IHreplay; eauto. eapply readPropAbort; eauto.
+   dependent destruction H4; constructor. }
+  {dependent destruction H2.
+   {admit. }
+   {admit. }
+  }
+Admitted. 
+
   
 (*
 (*

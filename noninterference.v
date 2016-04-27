@@ -52,95 +52,116 @@ Proof.
   {econstructor; eauto. }
 Qed.
 
-(*if tid doesn't own the lock, than it cannot be released after aborting*)
-Theorem lookupValidAbort : forall res b tid rv wv e0 L H l v lock,
-    @validate tid rv wv e0 b L H res -> ~locked tid lock ->
+Inductive releaseLocks (tid:nat) : forall b, heap -> log b -> heap -> Prop :=
+| releaseNilLog : forall H, releaseLocks tid false H NilLog H
+| releaseRead : forall L l v H H',
+    releaseLocks tid true H L H' -> releaseLocks tid true H (Read l v L) H'
+|releaseChkpnt : forall L l v E H H',
+    releaseLocks tid false H L H' -> releaseLocks tid false H (Chkpnt l E v L) H'
+|releaseWrite : forall b l L H H' v v' oldV,
+    releaseLocks tid b H L H' -> Log.notIn l b L -> H l = Some(v, Locked tid oldV v') ->
+    releaseLocks tid true H (Write b l L) (update H' l v' (Unlocked oldV)). 
+
+Theorem abortReleaseLocks : forall e0 tid rv wv b L H res,
+    @validate tid rv wv e0 b L H res ->
+    releaseLocks tid b H L (invalidHeap res). 
+Proof.
+  intros. Hint Constructors releaseLocks.
+  induction H0; simpl in *; eauto.
+  {dependent destruction H1; eauto. }
+Qed.
+
+Theorem lookupReleaseUnowned : forall HI b tid L H l v lock,
+    releaseLocks tid b H L HI -> ~locked tid lock ->
     H l = Some(v, lock) -> 
-    (invalidHeap res) l = Some(v, lock). 
+    HI l = Some(v, lock). 
 Proof.
   intros. genDeps{{lock; v}}. induction H0; intros; simpl in *; eauto. 
   {heapUnfold. destruct (Nat.eq_dec l0 l).
-   {subst. transEq. invertEq. exfalso. apply H4. constructor. }
-   {eauto. }
-  }
-  {heapUnfold. destruct (Nat.eq_dec l0 l).
-   {subst. transEq. invertEq. exfalso. apply H4. constructor. }
+   {subst. transEq. invertEq. exfalso. apply H3. constructor. }
    {eauto. }
   }
 Qed. 
 
-Theorem lookupAbortLocked : forall res b tid rv tid' wv e0 L H l v oldV v',
-    @validate tid rv wv e0 b L H res ->
+Theorem lookupReleaseMaybeOwned : forall b tid tid' L H l v oldV v' HI,
+    releaseLocks tid b H L HI ->
     H l = Some(v, Locked tid' oldV v') ->
-    ((invalidHeap res) l = Some(v, Locked tid' oldV v') \/
-     (invalidHeap res) l = Some(v', Unlocked oldV)). 
+    (HI l = Some(v, Locked tid' oldV v') \/
+     HI l = Some(v', Unlocked oldV)). 
 Proof.
   intros. genDeps{{tid'; l; v; oldV; v'}}. induction H0; intros; simpl; auto. 
-  {copy H4. eapply IHvalidate in H4. destruct (Nat.eq_dec l l0). 
-   {subst. simpl in *. transEq. invertEq. right. heapUnfold.
-    simplEq l0 l0. auto. }
-   {simpl in *. unfold update. simplEq l l0. auto. }
-  }
-  {copy H4. eapply IHvalidate in H4. unfold update. destruct (Nat.eq_dec l l0).
-   {subst. simpl in *. transEq. invertEq. right. auto. }
-   {eauto. }
+  {unfold update. destruct (Nat.eq_dec l l0).
+   {subst. right. transEq. invertEq. auto. }
+   {auto. }
   }
 Qed. 
 
-Theorem abortRewindSingleNI : forall b' H H' HI b tid chkpnt rv e0 L e L' e0' rv' wv' tid',
-    @validate tid' rv' wv' e0' b' L' H (abort chkpnt HI) ->
+Theorem acquireReleaseNI : forall b b' tid' tid H l v v' lock lock' rv L L' L0 HI,
+    @acquireLock l v' tid rv b L lock lock' L' -> H l = Some(v', lock) ->
+    releaseLocks tid' b' (update H l v lock') L0 HI -> tid <> tid' ->
+    releaseLocks tid' b' H L0 (update HI l v' lock).
+Proof.
+  intros. genDeps{{v'; L'; rv; b; tid; lock}}.
+  dependent induction H2; intros; eauto. 
+  {rewrite updateUpdate. rewrite updateIdempotent; auto. }
+  {heapUnfold. destruct (Nat.eq_dec l l0).
+   {subst. invertEq. dependent destruction H4; exfalso; auto. }
+   {rewrite updatecomm; auto. econstructor; eauto. }
+  }
+Qed. 
+
+Theorem abortRewindSingleNI : forall b' H H' HI b tid rv e0 L e L' tid',
+    releaseLocks tid' b' H L' HI ->
     rewind H' (txThread false tid rv e0 NilLog e0) H (txThread b tid rv e0 L e) ->
     tid' <> tid -> 
     exists H'', rewind H'' (txThread false tid rv e0 NilLog e0) HI (txThread b tid rv e0 L e) .
 Proof.
-  intros. genDeps{{tid'; rv'; wv'; e0'; L'; HI}}.
+  intros. genDeps{{HI; L'; b'; tid'}}.
   dependent induction H1; intros.
   {repeat econstructor. }
   {dependent destruction H0.
-   {(*r_readChkpnt*)
-     copy H5. eapply IHrewind in H5. Focus 2. eauto. invertHyp.
-     exists x. econstructor. eauto. econstructor; eauto.
-     eapply lookupValidAbort in H7; eauto. dependent destruction H4.
-     intro. inv H4. exfalso; auto. intro. inv H5. auto. }
-   {(*r_readNoChkpnt*)
-     copy H5. eapply IHrewind in H5. Focus 2. eauto. invertHyp.
-     exists x. econstructor. eauto. econstructor; eauto.
-     eapply lookupValidAbort in H7; eauto. dependent destruction H4.
-     intro. inv H4. exfalso; auto. intro. inv H5. auto. }
-   {(*r_readStepInvalid*)
-     copy H7. eapply IHrewind in H7. Focus 2. eauto. Focus 2. auto. invertHyp. exists x.
-     econstructor. eauto. dependent destruction H5. 
-     {eapply lookupValidAbort in H9; eauto. simpl in *.
-      eapply r_readStepInvalid; eauto. constructor. auto. intro. inv H7. }
-     {eapply lookupAbortLocked in H9; eauto. inv H9.
-      {simpl in *. eapply r_readStepInvalid; eauto. constructor. auto. }
-      {simpl in *. destruct (ge_dec rv s'). 
-       {inv H3.
-        {dependent destruction H6; econstructor; eauto. constructor.
-         auto. constructor. auto. }
-        {omega. }
-       }  
-       {inv H3.
-        {eapply r_readStepInvalid; eauto. constructor. constructor.
-         omega. }
-        {eapply r_readStepInvalid; eauto. constructor. constructor. auto. }
-       }
+   {copy H6. eapply IHrewind in H6; auto. invertHyp. exists x. econstructor; eauto. 
+    econstructor; eauto. eapply lookupReleaseUnowned in H7; eauto. intro.
+    inv H4. inv H6. exfalso; auto. inv H6. }
+   {copy H6. eapply IHrewind in H6; auto. invertHyp. exists x. econstructor; eauto. 
+    econstructor; eauto. eapply lookupReleaseUnowned in H7; eauto. intro.
+    inv H4. inv H6. exfalso; auto. inv H6. }
+   {copy H8. eapply IHrewind in H8; auto. invertHyp. exists x.
+    econstructor; eauto. dependent destruction H5.
+    {eapply lookupReleaseUnowned in H9; eauto.
+     eapply r_readStepInvalid; eauto. constructor; auto.
+     intro contra. inv contra. }
+    {eapply lookupReleaseMaybeOwned in H9; eauto. inv H9.
+     {eapply r_readStepInvalid; eauto. constructor; auto. }
+     {dependent destruction H6.
+      {inv H3.
+       {eapply r_readChkpnt; eauto. constructor; auto. }
+       {eapply r_readStepInvalid; eauto. constructor. constructor; auto.
+        constructor. }
+      }
+      {inv H3.
+       {eapply r_readNoChkpnt; eauto. constructor; auto. }
+       {eapply r_readStepInvalid; eauto. constructor. constructor; auto.
+        constructor. }
       }
      }
+    }
    }
-   {(*r_writeLocked*)
-     
- 
-
-
-
-     admit. }
-   {eapply IHrewind in H3. Focus 2. eauto. invertHyp. exists x. econstructor.
-    eauto. eapply r_atomicIdemStep; eauto. auto. }
-   {eapply IHrewind in H3. Focus 2. eauto. invertHyp. exists x. econstructor.
-    eauto. eapply r_betaStep; eauto. auto. }
+   {copy H6. eapply acquireReleaseNI in H6; eauto. copy H6. eapply IHrewind in H6; auto.
+    invertHyp. econstructor. econstructor. eassumption.
+    eapply lookupReleaseUnowned in H7. Focus 3. heapUnfold.
+    simplEq l l. eauto. copy H7. eapply heapPullOut in H7. invertHyp.
+    rewrite updateUpdate.
+    replace (update x0 l v lock') with (update (update x0 l v' lock) l v lock').
+    econstructor; eauto. heapUnfold. simplEq l l. auto. rewrite updateUpdate.
+    auto. intro. dependent destruction H4. inv H6. exfalso; auto.
+    inv H10. exfalso; auto. }
+   {eapply IHrewind in H4; auto. invertHyp. exists x. econstructor; eauto.
+    eapply r_atomicIdemStep; eauto. }
+   {eapply IHrewind in H4; auto. invertHyp. exists x. econstructor; eauto.
+    eapply r_betaStep; eauto. }
   }
-Admitted. 
+Qed.
 
 Ltac solveIn :=
   simpl;
@@ -163,9 +184,10 @@ Proof.
   intros. genDeps{{tid; rv; wv; e0; L; b; HI}}. induction H2; intros.
   {constructor. auto. }
   {assert(tid0 <> tid). intro. subst. inv H4. specialize (H5 tid).
-   apply H5. constructor; constructor.  
+   apply H5. constructor; constructor. copy H3.
+   eapply abortReleaseLocks in H3; eauto. simpl in *. 
    eapply abortRewindSingleNI in H3; eauto. invertHyp. econstructor.
-   eassumption. omega. auto. }
+   eauto. auto. auto. }
   {constructor. auto. eapply IHpoolRewind1; eauto. simpl in *.
    constructor. intros. intro. inv H2. specialize (H4 x). apply H4.
    solveIn. eapply IHpoolRewind2; eauto. constructor. intros.
