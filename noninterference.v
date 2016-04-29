@@ -8,7 +8,7 @@ Proof.
   {invertEq. }
   {assumption.  }
 Qed.
- 
+
 Theorem rewindAllocSingle : forall tid H H' b1 b2 S e0 L l v L' e e',
     H' l = None ->
     rewind H (txThread b1 tid S e0 L e) H' (txThread b2 tid S e0 L' e') ->

@@ -1,12 +1,4 @@
 Require Export stepPreservesUniqueness. 
-
-Theorem validInvalidStamp : forall tid S lock,
-                              validStamp tid S lock ->
-                              invalidStamp tid S lock -> False. 
-Proof.
-  intros tid S lock H H0.
-  inv H; inv H0; auto. omega.
-Qed.
    
 Theorem rewindNewerStamp : forall S C H1 H2 b1 b2 tid e0 L1 L2 t1 t2 HI HV chkpnt,
                              rewind H1 (txThread b1 tid S e0 L1 t1)

@@ -114,6 +114,14 @@ Inductive validStamp (tid : nat) (rv : nat) : lock -> Prop :=
 | LockOwned : forall s' v, validStamp tid rv (Locked tid s' v)
 | StampFresh : forall s, rv >= s -> validStamp tid rv (Unlocked s).
 
+Theorem validInvalidStamp : forall tid S lock,
+                              validStamp tid S lock ->
+                              invalidStamp tid S lock -> False. 
+Proof.
+  intros tid S lock H H0.
+  inv H; inv H0; auto. omega.
+Qed.
+
 (* Transactional log validation
  * Validate RV L H WV Res
  * RV - read version
@@ -172,12 +180,16 @@ Ltac invertHyp :=
   |H : validate ?tid ?S ?C ?e0 (Read ?l ?v ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
   |H : validate ?tid ?S ?C ?e0 (Chkpnt ?l ?E ?v ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
   |H : validate ?tid ?S ?C ?e0 (Write ?b ?l ?L) ?H0 ?res |- _ => dependent destruction H; try invertHyp
+  |H : validate ?tid ?S ?C ?e0 NilLog ?H0 ?res |- _ => dependent destruction H; try invertHyp
   |H : Log.notIn ?l ?b (Chkpnt ?l' ?E ?v ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.notIn ?l ?b (Read ?l' ?v ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.notIn ?l ?b (Write ?b' ?l' ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.In ?l (Chkpnt ?l' ?E ?v ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.In ?l (Read ?l' ?v ?L) |- _ => dependent destruction H; try invertHyp
   |H : Log.In ?l (Write ?b' ?l' ?L) |- _ => dependent destruction H; try invertHyp
+  |H : locked ?tid ?lock |- _ => inv H; try invertHyp
+  |H : invalidStamp ?tid ?rv (Locked ?tid' ?oldV ?v) |- _ => inv H; try invertHyp
+  |H : invalidStamp ?tid ?rv (Unlocked ?v) |- _ => inv H; try invertHyp
   | _ => tactics.invertHyp
   end.
 
