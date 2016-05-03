@@ -1,12 +1,7 @@
 Require Export AheadOfNI.  
 Require Export partialImpliesFull.
 
-(*
- * If we can replay from one state to another and the first state is
- * invalid, then the second one must be too
- *)
-
-
+(*We can't go from a log with writes to one without.  This isn't a great name...*)
 Theorem logMonotonic : forall H H' b tid rv e0 L e L' e',
     replay H (txThread true tid rv e0 L e) H' (txThread b tid rv e0 L' e') ->
     b = true. 
@@ -14,7 +9,8 @@ Proof.
   intros. dependent induction H0; auto.
   {dependent destruction H0; eauto. }
 Qed. 
- 
+
+(*if a start state is invalid, then anywhere we can step to is also invalid*)
 Theorem replayInvalid : forall H H' rv wv tid e0 L e L' e' chkpnt HI, 
                           replay H (txThread false tid rv e0 L e) H' (txThread false tid rv e0 L' e') ->
                           validate tid rv wv e0 L H (abort chkpnt HI) ->
@@ -29,12 +25,10 @@ Proof.
   {eapply logMonotonic in H3. solveByInv. }
 Qed. 
 
-Ltac sameStep :=
-  match goal with
-  |H : decompose ?t ?E ?e, H' : decompose ?t ?E' ?e' |- _ =>
-   eapply decomposeDeterministic in H; eauto; invertHyp; repeat invertEq
-  end.
-
+(* If we perform a timestamp extension in full abort, then we can either also
+ * timestamp extened in partial abort, or we can partially abort.  Either
+ * way we will still be ahead of full abort
+ *)
 Theorem AheadOfExtend : forall tid rv e0 L e''' L''' e H L' e' C,
     rewind H (txThread false tid rv e0 L e) H (txThread false tid rv e0 L' e') ->
     validate tid rv C e0 L H (commit (e''', L''') H H) -> C > rv ->
@@ -74,6 +68,13 @@ Proof.
    }
   }
 Qed. 
+
+(*used for proving that two steps are the same*)
+Ltac sameStep :=
+  match goal with
+  |H : decompose ?t ?E ?e, H' : decompose ?t ?E' ?e' |- _ =>
+   eapply decomposeDeterministic in H; eauto; invertHyp; repeat invertEq
+  end.
 
 (*partial abort can simulate full abort*)
 Theorem fullImpliesPartial : forall C H T C' H' T' PT, 

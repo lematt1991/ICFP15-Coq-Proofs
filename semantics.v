@@ -3,8 +3,9 @@ Require Export heap.
 Require Export Omega.   
 Require Export hetList. 
 Require Export Coq.Program.Equality. 
+Require Export Coq.Sets.Ensembles. 
 
-(*evaluation context decomposition*)
+(** * Evaluation contexts*)
 Inductive decompose : term -> ctxt -> term -> Prop :=
 |decompApp : forall e1 e2 E e, decompose e1 E e ->
                                decompose (app e1 e2) (appCtxt e2 E) e
@@ -29,7 +30,7 @@ Inductive decompose : term -> ctxt -> term -> Prop :=
                             decompose (inatomic e) (inatomicCtxt E) e'
 |decompInAtomicHole : forall v, value v -> decompose (inatomic v) hole (inatomic v). 
 
-(*values cannot be decomposed*)
+(** Values cannot be decomposed*)
 Theorem decomposeValFalse : forall t E e, value t -> decompose t E e -> False. 
 Proof.
   intros t E e v d. inv d; try solve[inv v]. 
@@ -55,7 +56,7 @@ Ltac invertDecomp :=
       |H:decompose (inatomic ?e) ?E ?E' |- _ => inv H
   end. 
 
-(*evaluation context decomposition is deterministic*)
+(** Evaluation context decomposition is deterministic*)
 Theorem decomposeDeterministic : forall t E E' e e', 
                                    decompose t E e -> decompose t E' e' ->
                                    E = E' /\ e = e'. 
@@ -89,12 +90,16 @@ Fixpoint fill (E:ctxt) (e:term) :=
       |hole => e 
   end.
 
-(*
-commit H1 H2:
+(**
+[commit chkpnt HI HV]
   -indicates the log is valid 
-  -HI has writes undone in case we later find a violation (invalid heap)
-  -HV keeps values in place but releases locks (valid heap)
-abort e L ==> log was invalid, resume execution at term e with log L
+  -[chkpnt] is used in the event we later find an out of date read without a checkpoint
+  -[HI] has writes undone in case we later find a violation (invalid heap)
+  -[HV] keeps values in place but releases locks (valid heap)
+[abort (e, L) HI]
+  -indicates validation failed
+  -resume with term [e] and log [L]
+  -[HI] contains the same heap but with locks released that came after the violation
 *)
 Inductive validateRes : Type := 
 |commit : chkpnt -> heap -> heap -> validateRes 
@@ -122,21 +127,27 @@ Proof.
   inv H; inv H0; auto. omega.
 Qed.
 
-(* Transactional log validation
- * Validate RV L H WV Res
- * RV - read version
- * RS - read set
- * H - heap
- * WV - write version
- * Res - result of validation, either:
- *    + commit - validation succeeded
- *    + abort e L - abort, picking up with term `e` and log `L`
- *)
-
 Inductive readTail : forall b, log b -> log b -> Prop :=
 |cTail : forall l v E L, readTail (Chkpnt l E v L) L
 |rTail : forall l v L, readTail (Read l v L) L.  
 
+(**
+* Transactional log validation
+- [tid]: thread ID of validating thread
+- [rv], [wv]: read version / write version 
+- [e0]: initial transaction term (in case of full abort)
+- [b]: indicates if a write exists in the log
+
+Rules:
+- [validNil]: empty log is trivially valid
+- [validChkpnt]: a checkpointed read is valid, if the tail is valid and lock corresponding is either owned, or is unlocked and older than read version.
+- [invalidChkpnt]: If the tail is valid, but the location read from is out of date or locked by someone else, then initiate an abort
+- [validRead]: analogous to [validChkpnt]
+- [invalidRead]: analogous to [invalidChkpnt]
+- [validWrite]: The location written must be acquired by [tid].  We also enforce that [rv >= oldV] and [Log.notIn l b L].  This is not strictly necessary, but makes the proofs easier later on.  This doesn't impose any restrictions on the semantics.  
+- [readPropAbort]: propogate an abort
+- [writePropAbort]: propogate an abort at a write.  We must also unlocked the appropriate location.
+ *)
 Inductive validate (tid : nat) (rv wv : nat) (e0 : term) : forall b, log b -> heap -> validateRes -> Prop :=
 |validNil : forall H, validate tid rv wv e0 NilLog H (commit (e0, NilLog) H H)
 |validChkpnt : forall lock l v v' E H HI HV L chkpnt,
@@ -219,8 +230,17 @@ Inductive acquireLock (l : location) (v : term) (tid rv : nat) : forall b, log b
     rv >= S' -> Log.notIn l b L -> (*newly acquired*)
     acquireLock l v tid rv L (Unlocked S') (Locked tid S' v) (Write b l L).   
 
+(** 
+* Transactional Steps
+
+- [t_readChkpnt]: A checkpointed read can occur if there are no writes in the log and if the associated lock is valid (owned or unlocked and older than [rv]).
+- [t_readNoChkpnt]: Valid read without a checkpoint (we already have written something).
+- [t_writeLocked]: write to the location if we can acquire the lock.  Either we already own it, or it is unlocked and older than our read version.
+- [t_atomicIdemStep]: nested transactions are idempotent
+- [t_betaStep]: beta reduction within a transaction.
+
+*)
 Inductive trans_step : heap -> thread -> heap -> thread -> Prop :=
-(*read after write*)
 |t_readChkpnt : forall S (L : log false) E l t tid v e0 lock H, 
                   decompose t E (get (loc l)) -> 
                   H l = Some(v, lock) -> validStamp tid S lock ->
@@ -254,6 +274,11 @@ Inductive readOrChkpnt l v E : forall b, log b -> log b -> Prop :=
 |chkpnt : forall tail, @readOrChkpnt l v E false tail (Chkpnt l E v tail)
 |nochkpnt : forall tail, @readOrChkpnt l v E true tail (Read l v tail). 
 
+(** 
+* Replay Semantics
+
+This is analogous to the [trans_step] relation with the addition of the [r_readStepInvalid] rule.  This allows us to maintain important invariants throughout the proofs later on.  The added rule allows us to read the backed up value of the location *if* the lock is acquired by someone else *and* the old version is valid with respect to our read version.  If this is not the case and the lock is invalid for us to read, then we are able to "pull a value out of thin air".
+*)
 Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
 (*read after write*)
 |r_readChkpnt : forall S (L : log false) E l t tid v e0 lock H, 
@@ -285,14 +310,14 @@ Inductive replay_step : heap -> thread -> heap -> thread -> Prop :=
               replay_step H (txThread b tid S e0 L t) H (txThread b tid S e0 L (fill E (open e 0 v)))
 . 
 
-(*reflexive transitive closure of replay_step*)
+(**reflexive transitive closure of replay_step*)
 Inductive replay : heap -> thread -> heap -> thread -> Prop :=
 |replayRefl : forall H t, replay H t H t
 |replayStep : forall t t' t'' H H' H'', 
                 replay_step H t H' t' -> replay H' t' H'' t'' -> 
                 replay H t H'' t''. 
 
-(*left recursive version of replay*)
+(** left recursive version of replay*)
 Inductive rewind : heap -> thread -> heap -> thread -> Prop :=
 |rewindRefl : forall t H, rewind H t H t
 |rewindStep : forall t t' t'' H H' H'', 
@@ -301,7 +326,21 @@ Inductive rewind : heap -> thread -> heap -> thread -> Prop :=
 
 Definition step_sig := nat -> heap -> pool -> nat -> heap -> pool -> Prop. 
 
-(*common steps (single step)*)
+(** 
+* Common Step Semantics
+This relation is parameterized by another step relation, allowing us to factor out the common rules into one relation, and then plug the unique rules (via c_liftedStep).  
+
+- [c_liftedStep]: Dispatch to the parameterized step relation
+- [c_transStep]: Take a transactional step
+- [c_parLStep]: Focus on the left thread pool
+- [c_parRStep]: Focus on the right thread pool
+- [c_forkStep]: Fork a thread, use the version clock as the thread ID so we can preserve unique thread IDs
+- [c_allocStep]: Allocate a new TVar.  This can only be done outside a transaction.  Allocation inside transactions presents a number of difficulties, mostly relating to alpha renaming.
+- [c_commitStep]: Commit a transaction
+- [c_atomicStep]: Begin a transaction.  Remember the current term in the event of a full abort.
+- [c_betaStep]: Beta reduction outside a transction
+- [c_tsExtend]: Timestamp extension if log is valid.
+*)
 Inductive c_step (st : step_sig) : step_sig :=
 |c_liftedStep : forall C H P C' H' P',
                   st C H P C' H' P' ->
@@ -372,17 +411,12 @@ Inductive multistep_rev (st : step_sig) : step_sig :=
 Definition f_multistep := multistep f_step.
 Definition p_multistep := multistep p_step.
 
-(*reflexivit transitive closure of trans_step*)
+(*reflexive, transitive closure of trans_step*)
 Inductive trans_multistep : heap -> thread -> heap -> thread -> Prop :=
 |trans_refl : forall t H, trans_multistep H t H t
 |trans_multi_step : forall t t' t'' H H' H'', 
                       trans_step H t H' t' -> trans_multistep H' t' H'' t'' ->
                       trans_multistep H t H'' t''. 
-
-(*indicates that L1 is a postfix of L2*)
-Definition postfix {A:Type} (L1 L2 : list A) := exists diff, L2 = diff ++ L1. 
-
-Require Export Coq.Sets.Ensembles. 
 
 Fixpoint ids P :=
   match P with
@@ -391,9 +425,11 @@ Fixpoint ids P :=
   | Single (txThread _ id _ _ _ _) => Singleton nat id
   end. 
 
-(*all threads can rewind to their initial term of a transaction and have
-**a stamp number less than the global clock.  The stamp number 
-**constraint probably doesn't belong here, but its handy to have*)
+(** 
+* Pool Rewind
+
+States that a pool of threads can rewind from where they are now in their transactions, to the beginning.  Non transactional threads stay where they are.  Additionally, it's helpful to know that the thread IDs are unique, so we pack that in here as well.
+*)
 Inductive poolRewind (C : nat) (H : heap) : pool -> Prop :=
 |rewindSingleNoTX : forall tid e, tid < C -> poolRewind C H (Single(noTXThread tid e))
 |rewindSingleInTX : forall b tid S e0 L e H',
