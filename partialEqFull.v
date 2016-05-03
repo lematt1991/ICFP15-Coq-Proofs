@@ -17,33 +17,26 @@ Fixpoint Done T :=
   end. 
 
 (*if T is done and T' is ahead of T, then T = T'*)
-Theorem DoneAheadOf : forall H T T', 
-                   Done T -> AheadOf H T T' ->
+Theorem DoneAheadOf : forall H T T' C,  
+                   Done T -> AheadOf C H T T' ->
                    T = T'. 
 Proof.
-  intros. induction H1. 
+  intros. induction H1.  
   {inv H0; auto. }
-  {inv H0. }
+  {solveByInv. }
+  {solveByInv. }
   {inv H0. rewrite IHAheadOf1; auto. rewrite IHAheadOf2; auto. }
 Qed. 
 
-(*the initial pool can trivially be rewound*)
+(*the initial pool can trivially be rewound and is ahead of itself*)
 Theorem rewindInitPool : forall T H, 
-    initialPool T -> exists C, poolRewind C H T. 
+    initialPool T -> exists C, poolRewind C H T /\ AheadOf C H T T. 
 Proof.
   intros. destruct T.
-  {destruct t; inv H0. exists (S n). constructor. auto. }
+  {destruct t; inv H0. exists (S n). split. constructor. auto.
+   constructor. auto. }
   {inv H0. }
 Qed. 
-
-(*If T is an initial pool, then it is trivially ahead of itself*)
-Theorem AheadOfInitPool : forall H T, initialPool T -> AheadOf H T T. 
-Proof.
-  intros. destruct T.
-  {destruct t; inv H0. constructor. }
-  {inv H0. }
-Qed. 
-
 
 (*partial abort and full abort are equivalent*)
 Theorem partialEqFull : forall H T C' H' T', 
@@ -54,9 +47,8 @@ Proof.
   intros. copy H0. apply rewindInitPool with(H := H) in H0. 
   invertHyp. exists x. split; intros. 
   {apply partialImpliesFullMulti; auto. }
-  {eapply fullImpliesPartialMulti in H3. invertHyp.
-   copy H5. apply DoneAheadOf in H5; auto. subst x0. eauto. auto.
-   eauto. eapply AheadOfInitPool; auto. }
+  {eapply fullImpliesPartialMulti in H3; eauto. invertHyp.
+   copy H6. apply DoneAheadOf in H6; auto. subst x0. eauto. }
 Qed. 
 
 

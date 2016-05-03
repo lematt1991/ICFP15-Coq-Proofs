@@ -153,6 +153,14 @@ Proof.
   }
 Qed.
 
+Theorem rewindNoWrites : forall H H' tid rv e0 L L' e e',
+    rewind H (txThread false tid rv e0 L e) H' (txThread false tid rv e0 L' e') ->
+    H = H'.
+Proof.
+  intros. dependent induction H0; eauto. 
+  {dependent destruction H1; eauto. }
+Qed.
+
 (** 
  * abortRewind
  * If the log at the end of a rewind derivation is invalid, then we can rewind
@@ -178,7 +186,8 @@ Proof.
    {invertHyp; eauto. transEq. invertEq. exfalso.
     eapply validInvalidStamp; eauto. } 
    {dependent destruction H6; invertHyp; eauto.     (*r_readStepInvalid*)
-    {transEq. invertEq. eapply commitRewind; eauto. }
+    {transEq. invertEq. apply decomposeEq in H1. subst. copy H3.
+     eapply rewindNoWrites in H3. subst. eapply rewindNewerStamp; eauto. }
     {transEq. invertEq. eapply commitRewind; eauto. }
    }
    {eapply abortAcquiredLock in H5; eauto. }

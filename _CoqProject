@@ -1,5 +1,6 @@
 -install none
 -R . ICFP
+./AheadOfNI.v
 ./noninterference.v
 ./stepPreservesUniqueness.v
 ./validateWrite.v

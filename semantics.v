@@ -146,7 +146,7 @@ Inductive validate (tid : nat) (rv wv : nat) (e0 : term) : forall b, log b -> he
 |invalidChkpnt : forall lock l v v' E H HI HV L chkpnt,
                    H l = Some(v', lock) -> invalidStamp tid rv lock ->
                    validate tid rv wv e0 L H (commit chkpnt HI HV) ->
-                   validate tid rv wv e0 (Chkpnt l E v L) H (abort chkpnt(*(fill E (get (loc l)), L)*) HI)
+                   validate tid rv wv e0 (Chkpnt l E v L) H (abort (fill E (get (loc l)), L) HI)
 |validRead : forall lock l v v' H HI HV L chkpnt,
                H l = Some(v', lock) -> validStamp tid rv lock ->
                validate tid rv wv e0 L H (commit chkpnt HI HV) ->

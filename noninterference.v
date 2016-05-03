@@ -8,7 +8,7 @@ Proof.
   {invertEq. }
   {assumption.  }
 Qed.
-
+ 
 Theorem rewindAllocSingle : forall tid H H' b1 b2 S e0 L l v L' e e',
     H' l = None ->
     rewind H (txThread b1 tid S e0 L e) H' (txThread b2 tid S e0 L' e') ->
@@ -110,13 +110,13 @@ Proof.
   }
 Qed. 
 
-Theorem abortRewindSingleNI : forall b' H H' HI b tid rv e0 L e L' tid',
-    releaseLocks tid' b' H L' HI ->
-    rewind H' (txThread false tid rv e0 NilLog e0) H (txThread b tid rv e0 L e) ->
+Theorem abortRewindSingleNI : forall b' b'' H H' HI b tid rv e0 L e e' L'' L' tid',
+    releaseLocks tid' b'' H L'' HI ->
+    rewind H' (txThread b tid rv e0 L e) H (txThread b' tid rv e0 L' e') ->
     tid' <> tid -> 
-    exists H'', rewind H'' (txThread false tid rv e0 NilLog e0) HI (txThread b tid rv e0 L e) .
+    exists H'', rewind H'' (txThread b tid rv e0 L e) HI (txThread b' tid rv e0 L' e') .
 Proof.
-  intros. genDeps{{HI; L'; b'; tid'}}.
+  intros. genDeps{{HI; L''; b''; tid'}}.
   dependent induction H1; intros.
   {repeat econstructor. }
   {dependent destruction H0.
@@ -256,11 +256,11 @@ Proof.
   }
 Qed. 
 
-Theorem commitRewindSingleNI : forall b' H H' HI b tid chkpnt rv e0 L e L' e0' rv' C tid' HV,
+Theorem commitRewindSingleNI : forall b' b'' L'' e'' H H' HI b tid chkpnt rv e0 L e L' e0' rv' C tid' HV,
     @validate tid' rv' C e0' b' L' H (commit chkpnt HI HV) -> rv < C ->
-    rewind H' (txThread false tid rv e0 NilLog e0) H (txThread b tid rv e0 L e) ->
+    rewind H' (txThread b'' tid rv e0 L'' e'') H (txThread b tid rv e0 L e) ->
     tid <> tid' ->
-    exists H'', rewind H'' (txThread false tid rv e0 NilLog e0) HV (txThread b tid rv e0 L e) .
+    exists H'', rewind H'' (txThread b'' tid rv e0 L'' e'') HV (txThread b tid rv e0 L e) .
 Proof.
   intros. intros. genDeps{{tid'; rv'; C; e0'; L'; HI; HV}}.
   dependent induction H2; intros.
@@ -319,12 +319,12 @@ Proof.
   }
 Qed. 
   
-Theorem writeSingleNI : forall b' b tid rv e0 L H H' e l v v' tid' rv' L' lock lock' L'',
+Theorem writeSingleNI : forall b' b b'' L''' e' tid rv e0 L H H' e l v v' tid' rv' L' lock lock' L'',
     @acquireLock l v' tid' rv' b' L' lock lock' L'' ->
-    rewind H' (txThread false tid rv e0 NilLog e0) H
+    rewind H' (txThread b'' tid rv e0 L''' e') H
            (txThread b tid rv e0 L e) ->
     H l = Some(v', lock) -> tid' <> tid ->
-    exists H'', rewind H'' (txThread false tid rv e0 NilLog e0) (update H l v lock')
+    exists H'', rewind H'' (txThread b'' tid rv e0 L''' e') (update H l v lock')
                   (txThread b tid rv e0 L e).
 Proof. 
   intros. genDeps{{l; v'; tid'; rv'; L'; lock; lock'; L''; b'; v}}. 

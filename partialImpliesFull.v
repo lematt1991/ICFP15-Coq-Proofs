@@ -126,7 +126,8 @@ Proof.
   induction H0; intros.
   {inv Heqv. }
   {inv Heqv. }
-  {inv Heqv. eapply commitChkpnt in H2; eauto. }
+  {inv Heqv. copy H2. eapply validateNoWrites in H2; eauto.
+   invertHyp. subst. eauto. }
   {inv Heqv. }
   {inv Heqv. eapply commitChkpnt in H2; eauto. }
   {inv Heqv. }
