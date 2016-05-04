@@ -1,16 +1,16 @@
 Require Export noninterference. 
 Require Import Coq.Sets.Powerset_facts. 
 
-Theorem f_clockMonotonic : forall C H T C' H' T',
-    f_step C H T C' H' T' -> C' >= C.
-Proof.
-  intros. induction H0; auto. inv H0; auto.
-Qed. 
 
-Inductive extension (C C' : nat) (T T' : pool) : Prop :=
+(**
+* Uniqueness of thread pools
+*)
+
+(** States that *)
+Inductive extension (C : nat) (T T' : pool) : Prop :=
   extension_ : forall extra, ids T' = Union nat (ids T) extra ->
                         (forall id, In nat extra id -> id >= C) ->
-                        extension C C' T T'. 
+                        extension C T T'. 
 
 
 Theorem unionEmpty : forall A S, Union A S (Empty_set A) = S.
@@ -18,9 +18,9 @@ Proof.
   intros. apply Extensionality_Ensembles. constructor.
   intro. intros. solveIn. constructor. auto.
 Qed. 
-
+  
 Theorem f_stepExtension : forall C H T C' H' T',
-    f_step C H T C' H' T' -> extension C C' T T'.
+    f_step C H T C' H' T' -> extension C T T'.
 Proof.
   intros. induction H0; try solve[(econstructor; simpl; [erewrite unionEmpty; eauto|
                                                     intros id H999; inv H999])].
@@ -38,7 +38,7 @@ Proof.
 Qed. 
 
 Theorem p_stepExtension : forall C H T C' H' T',
-    p_step C H T C' H' T' -> extension C C' T T'.
+    p_step C H T C' H' T' -> extension C T T'.
 Proof.
   intros. induction H0; try solve[(econstructor; simpl; [erewrite unionEmpty; eauto|
                                                     intros id H999; inv H999])].
@@ -62,8 +62,6 @@ Proof.
   {inv H0; inv H1;  auto. }
   {inv H0; inv H1; auto. }
 Qed. 
-
-
 
 Theorem DisjointComm : forall A T1 T2, Disjoint A T1 T2 <-> Disjoint A T2 T1.
 Proof.
