@@ -1,0 +1,181 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<link href="coqdoc.css" rel="stylesheet" type="text/css" />
+<title>ast</title>
+</head>
+
+<body>
+
+<div id="page">
+
+<div id="header">
+</div>
+
+<div id="main">
+
+<h1 class="libtitle">Library ast</h1>
+
+<div class="code">
+<span class="id" title="keyword">Require</span> <span class="id" title="keyword">Export</span> <span class="id" title="var">List</span>.<br/>
+<span class="id" title="keyword">Export</span> <span class="id" title="var">ListNotations</span>.<br/>
+<span class="id" title="keyword">Require</span> <span class="id" title="keyword">Export</span> <span class="id" title="var">tactics</span>.<br/>
+<span class="id" title="keyword">Open</span> <span class="id" title="keyword">Scope</span> <span class="id" title="var">type_scope</span>.<br/>
+
+<br/>
+</div>
+
+<div class="doc">
+<a name="lab1"></a><h1 class="section">AST</h1>
+
+</div>
+<div class="code">
+
+<br/>
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">term</span> : <span class="id" title="keyword">Type</span> :=<br/>
+|<span class="id" title="var">lambda</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">loc</span> : <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">unit</span> : <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">var</span> : <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">app</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">get</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">put</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">alloc</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">fork</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">atomic</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span><br/>
+|<span class="id" title="var">inatomic</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">term</span>.<br/>
+
+<br/>
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">value</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="keyword">Prop</span> :=<br/>
+|<span class="id" title="var">v_lam</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">e</span>, <span class="id" title="var">value</span> (<span class="id" title="var">lambda</span> <span class="id" title="var">e</span>)<br/>
+|<span class="id" title="var">v_loc</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">n</span>, <span class="id" title="var">value</span> (<span class="id" title="var">loc</span> <span class="id" title="var">n</span>)<br/>
+|<span class="id" title="var">v_unit</span> : <span class="id" title="var">value</span> <span class="id" title="var">unit</span>.<br/>
+
+<br/>
+</div>
+
+<div class="doc">
+Evaluation context
+</div>
+<div class="code">
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">ctxt</span> : <span class="id" title="keyword">Type</span> :=<br/>
+|<span class="id" title="var">hole</span> : <span class="id" title="var">ctxt</span><br/>
+|<span class="id" title="var">appCtxt</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span><br/>
+|<span class="id" title="var">appValCtxt</span> (<span class="id" title="var">t</span>:<span class="id" title="var">term</span>) : <span class="id" title="var">value</span> <span class="id" title="var">t</span> -&gt; <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span><br/>
+|<span class="id" title="var">getCtxt</span> : <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span><br/>
+|<span class="id" title="var">putCtxt</span> : <span class="id" title="var">term</span> -&gt; <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span> <br/>
+|<span class="id" title="var">putValCtxt</span> (<span class="id" title="var">t</span>:<span class="id" title="var">term</span>) : <span class="id" title="var">value</span> <span class="id" title="var">t</span> -&gt; <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span><br/>
+|<span class="id" title="var">allocCtxt</span> : <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span><br/>
+|<span class="id" title="var">inatomicCtxt</span> : <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">ctxt</span>.<br/>
+
+<br/>
+</div>
+
+<div class="doc">
+location (address)
+</div>
+<div class="code">
+<span class="id" title="keyword">Definition</span> <span class="id" title="var">location</span> := <span class="id" title="var">nat</span>.<br/>
+
+<br/>
+</div>
+
+<div class="doc">
+timestamp used by the STM
+</div>
+<div class="code">
+<span class="id" title="keyword">Definition</span> <span class="id" title="var">stamp</span> := <span class="id" title="var">nat</span>.<br/>
+
+<br/>
+</div>
+
+<div class="doc">
+STM logs.  The boolean index is used for indicating if a 
+write exists in the log
+</div>
+<div class="code">
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">log</span> : <span class="id" title="var">bool</span> -&gt; <span class="id" title="keyword">Type</span> :=<br/>
+|<span class="id" title="var">Read</span> : <span class="id" title="var">location</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">true</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">true</span><br/>
+|<span class="id" title="var">Chkpnt</span> : <span class="id" title="var">location</span> -&gt; <span class="id" title="var">ctxt</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">false</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">false</span><br/>
+|<span class="id" title="var">Write</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">b</span>, <span class="id" title="var">location</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">b</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">true</span><br/>
+|<span class="id" title="var">NilLog</span> : <span class="id" title="var">log</span> <span class="id" title="var">false</span>.<br/>
+
+<br/>
+<span class="id" title="keyword">Module</span> <span class="id" title="var">Log</span>.<br/>
+&nbsp;&nbsp;<span class="id" title="keyword">Inductive</span> <span class="id" title="var">notIn</span> (<span class="id" title="var">l</span> : <span class="id" title="var">location</span>) : <span class="id" title="keyword">forall</span> <span class="id" title="var">b</span>, <span class="id" title="var">log</span> <span class="id" title="var">b</span> -&gt; <span class="id" title="keyword">Prop</span> :=<br/>
+&nbsp;&nbsp;|<span class="id" title="var">notInNil</span> : <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">false</span> <span class="id" title="var">NilLog</span><br/>
+&nbsp;&nbsp;|<span class="id" title="var">notInRead</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">l'</span> <span class="id" title="var">v'</span> <span class="id" title="var">L</span>, <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">true</span> <span class="id" title="var">L</span> -&gt; <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">true</span> (<span class="id" title="var">Read</span> <span class="id" title="var">l'</span> <span class="id" title="var">v'</span> <span class="id" title="var">L</span>)<br/>
+&nbsp;&nbsp;|<span class="id" title="var">notInChkpnt</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">l'</span> <span class="id" title="var">v</span> <span class="id" title="var">E</span> <span class="id" title="var">L</span>, <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">false</span> <span class="id" title="var">L</span> -&gt; <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">false</span> (<span class="id" title="var">Chkpnt</span> <span class="id" title="var">l'</span> <span class="id" title="var">v</span> <span class="id" title="var">E</span> <span class="id" title="var">L</span>)<br/>
+&nbsp;&nbsp;|<span class="id" title="var">notInWrite</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">l'</span> <span class="id" title="var">b</span> <span class="id" title="var">L</span>, <span class="id" title="var">l</span> &lt;&gt; <span class="id" title="var">l'</span> -&gt; <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">b</span> <span class="id" title="var">L</span> -&gt; <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">true</span> (<span class="id" title="var">Write</span> <span class="id" title="var">b</span> <span class="id" title="var">l'</span> <span class="id" title="var">L</span>).<br/>
+
+<br/>
+&nbsp;&nbsp;<span class="id" title="keyword">Inductive</span> <span class="id" title="var">In</span> (<span class="id" title="var">l</span> : <span class="id" title="var">location</span>) : <span class="id" title="var">log</span> <span class="id" title="var">true</span> -&gt; <span class="id" title="keyword">Prop</span> :=<br/>
+&nbsp;&nbsp;|<span class="id" title="var">InRead</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">l'</span> <span class="id" title="var">v</span> <span class="id" title="var">L</span>, <span class="id" title="var">In</span> <span class="id" title="var">l</span> <span class="id" title="var">L</span> -&gt; <span class="id" title="var">In</span> <span class="id" title="var">l</span> (<span class="id" title="var">Read</span> <span class="id" title="var">l'</span> <span class="id" title="var">v</span> <span class="id" title="var">L</span>)<br/>
+&nbsp;&nbsp;|<span class="id" title="var">InWrite</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">b</span> <span class="id" title="var">L</span>, <span class="id" title="var">notIn</span> <span class="id" title="var">l</span> <span class="id" title="var">b</span> <span class="id" title="var">L</span> -&gt; <span class="id" title="var">In</span> <span class="id" title="var">l</span> (<span class="id" title="var">Write</span> <span class="id" title="var">b</span> <span class="id" title="var">l</span> <span class="id" title="var">L</span>)<br/>
+&nbsp;&nbsp;|<span class="id" title="var">InWriteNext</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">L</span> <span class="id" title="var">l'</span>,<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="id" title="var">l</span> &lt;&gt; <span class="id" title="var">l'</span> -&gt;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="id" title="var">In</span> <span class="id" title="var">l</span> <span class="id" title="var">L</span> -&gt; <span class="id" title="var">In</span> <span class="id" title="var">l</span> (<span class="id" title="var">Write</span> <span class="id" title="var">true</span> <span class="id" title="var">l'</span> <span class="id" title="var">L</span>).<br/>
+<span class="id" title="keyword">End</span> <span class="id" title="var">Log</span>.<br/>
+
+<br/>
+</div>
+
+<div class="doc">
+
+<div class="paragraph"> </div>
+
+A lock corresponding to a transactional location.  
+If the lock is in an acquired state, then we keep the 
+old version number and old value prior to the access.
+If the lock is not acquired, then the lock simply holds
+the version number associated with the location.
+
+</div>
+<div class="code">
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">lock</span> : <span class="id" title="keyword">Type</span> :=<br/>
+|<span class="id" title="var">Locked</span> : <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">lock</span>     </div>
+
+<div class="doc">
+ID of thread who owns lock, previous stamp and previous val
+</div>
+<div class="code">
+|<span class="id" title="var">Unlocked</span> : <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">lock</span>   <br/>
+.<br/>
+</div>
+
+<div class="doc">
+A `TVar` consists of a an address, a value, and a lock
+</div>
+<div class="code">
+<span class="id" title="keyword">Definition</span> <span class="id" title="var">TVar</span> := <span class="id" title="var">location</span> * <span class="id" title="var">term</span> * <span class="id" title="var">lock</span>.<br/>
+
+<br/>
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">thread</span> : <span class="id" title="keyword">Type</span> :=<br/>
+|<span class="id" title="var">noTXThread</span> : <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">thread</span><br/>
+|<span class="id" title="var">txThread</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">b</span>, <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">nat</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">log</span> <span class="id" title="var">b</span> -&gt; <span class="id" title="var">term</span> -&gt; <span class="id" title="var">thread</span><br/>
+.<br/>
+
+<br/>
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">pool</span> : <span class="id" title="keyword">Type</span> := <br/>
+|<span class="id" title="var">Single</span> : <span class="id" title="var">thread</span> -&gt; <span class="id" title="var">pool</span><br/>
+|<span class="id" title="var">Par</span> : <span class="id" title="var">pool</span> -&gt; <span class="id" title="var">pool</span> -&gt; <span class="id" title="var">pool</span>.<br/>
+
+<br/>
+<span class="id" title="keyword">Definition</span> <span class="id" title="var">chkpnt</span> := <span class="id" title="var">term</span> * <span class="id" title="var">log</span> <span class="id" title="var">false</span>.<br/>
+
+<br/>
+<span class="id" title="keyword">Inductive</span> <span class="id" title="var">locked</span> (<span class="id" title="var">tid</span> : <span class="id" title="var">nat</span>) : <span class="id" title="var">lock</span> -&gt; <span class="id" title="keyword">Prop</span> :=<br/>
+|<span class="id" title="var">acquired</span> : <span class="id" title="keyword">forall</span> <span class="id" title="var">oldV</span> <span class="id" title="var">v</span>, <span class="id" title="var">locked</span> <span class="id" title="var">tid</span> (<span class="id" title="var">Locked</span> <span class="id" title="var">tid</span> <span class="id" title="var">oldV</span> <span class="id" title="var">v</span>).<br/>
+</div>
+</div>
+
+<div id="footer">
+<hr/><a href="index.html">Index</a><hr/>This page has been generated by <a href="http://coq.inria.fr/">coqdoc</a>
+</div>
+
+</div>
+
+</body>
+</html>
