@@ -62,4 +62,10 @@ Proof.
   apply heapExt. intros. unfold update. destruct (PeanoNat.Nat.eq_dec l l0).
   {subst. auto. }
   {auto. }
-Qed. 
+Qed.
+
+Ltac heapUnfold :=
+  match goal with
+  |H : update ?h ?l ?v ?lock ?l' = ?x |- _ => unfold update in H; try heapUnfold
+  | |- update ?H ?l ?v ?lock ?l' = ?x => unfold update
+  end.
