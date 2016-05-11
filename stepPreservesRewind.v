@@ -163,11 +163,11 @@ Qed.
 
 (** 
  * abortRewind
- * If the log at the end of a rewind derivation is invalid, then we can rewind
- * from the log returned from validate.
- * Maybe this would be easier if we didn't distinguish between H0 and H'?  
- * they should be the same.
- **)
+If the log at the end of a rewind derivation is invalid, then we can rewind
+from the log returned from validate.
+Maybe this would be easier if we didn't distinguish between [H0] and [H']?  
+They should be the same.
+ *)
 Theorem abortRewind : forall H H0 C tid e e' e0 b L L' S,
     @validate tid S C e0 b L H (abort (e', L') H0) -> C >= S ->
     rewind H0 (txThread false tid S e0 NilLog e0) H (txThread b tid S e0 L e) ->
