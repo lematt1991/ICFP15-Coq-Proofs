@@ -1,8 +1,7 @@
-ICFP'15 Proofs
+Partial Abort STM Proofs
 -
 
-This directory contains all of the proofs verifying that the partial abort semantics is equal to the full abort semantics provided in "Partial Aborts for Transactions via First-Class Continuations," submitted to ICFP'15.
+This repository contains proofs verifying that the partial abort semantics is equivalent to the full abort semantics for various STM implmementations.
 
-The entire development can be built by running `make`
-
-All proofs go through using Coq version 8.4pl6
+- Use the ICFP15 branch for TL2 semantics
+- Use JFP-Proofs branch for TinySTM semantics
