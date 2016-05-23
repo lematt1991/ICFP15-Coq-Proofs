@@ -1,33 +1,71 @@
 Require Export ast.  
-Require Export Coq.Arith.Peano_dec. 
+Require Export Coq.Logic.FunctionalExtensionality.
 
 (*maps locations to terms and time stamps*)
-Definition heap := list (location * term * stamp). 
 
-(*lookup an address in the heap*)
-Fixpoint lookup (H:heap) (l:location) :=
-  match H with
-      |(l', v, stamp)::H' => if eq_nat_dec l l'
-                            then Some (v, stamp)
-                            else lookup H' l
-      |nil => None
-  end. 
+Definition heap := location -> option term. 
 
-(*
- * If we can lookup a location in heap H, then we must 
- * still be able to find it if we extend the heap.
- *)
-Theorem lookupExtension : forall Hnew H l v S, 
-                            lookup H l  = Some(v, S) ->
-                            exists v' S', lookup (Hnew++H) l = Some(v', S'). 
+Definition emptyHeap : heap := fun _ => None. 
+
+Definition update H l v : heap :=
+  fun l' => if eq_nat_dec l l'
+         then Some v
+         else H l'. 
+
+Theorem heapExt : forall (H1 H2 : heap), (forall l, H1 l = H2 l) <-> H1 = H2.
 Proof.
-  induction Hnew; intros. 
-  {simpl. exists v. exists S. assumption. }
-  {simpl. destruct a. destruct p. destruct (eq_nat_dec l l0). 
-   {subst. exists t. exists s. reflexivity. }
-   {eapply IHHnew in H0. invertHyp. exists x. exists x0. assumption. }
-  }
+  intros. split.
+  {intros. eapply functional_extensionality; auto. }
+  {intros. subst. reflexivity. }
+Qed.  
+
+Theorem lookupUpdate : forall H l v v',
+                         H l = Some(v') -> 
+                         (update H l v) l = Some(v). 
+Proof.
+  intros. unfold update. destruct (PeanoNat.Nat.eq_dec l l); auto.
+  exfalso. apply n. auto.
+Qed. 
+
+
+Theorem updateUpdate : forall H l v v',
+                         update (update H l v) l v' = update H l v'.
+Proof.
+  intros. apply heapExt. intros. unfold update. destruct (PeanoNat.Nat.eq_dec l l0); auto.
+Qed. 
+
+Theorem updateIdempotent : forall H l v,
+                             H l  = Some v ->
+                             update H l v = H.
+Proof.
+  intros H l v H0. apply heapExt. intros. unfold update.
+  destruct (PeanoNat.Nat.eq_dec l l0).
+  {subst. rewrite H0. reflexivity. }
+  {auto. }
+Qed. 
+  
+Theorem updatecomm : forall H l l' v v',
+    l <> l' ->
+    update (update H l v) l' v' =
+    update (update H l' v') l v.
+Proof.
+  intros. apply heapExt. intros. unfold update.
+  destruct (PeanoNat.Nat.eq_dec l' l0); destruct (PeanoNat.Nat.eq_dec l l0); auto.
+  subst. exfalso; auto.
+Qed. 
+
+Theorem heapPullOut : forall H l v,
+    H l = Some v  ->
+    exists H', H = update H' l v. 
+Proof.
+  intros. exists (fun l' => if PeanoNat.Nat.eq_dec l l' then Some v else H l'). 
+  apply heapExt. intros. unfold update. destruct (PeanoNat.Nat.eq_dec l l0).
+  {subst. auto. }
+  {auto. }
 Qed.
 
-
-
+Ltac heapUnfold :=
+  match goal with
+  |H : update ?h ?l ?v ?lock ?l' = ?x |- _ => unfold update in H; try heapUnfold
+  | |- update ?H ?l ?v ?lock ?l' = ?x => unfold update
+  end.
