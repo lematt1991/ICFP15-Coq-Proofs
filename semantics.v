@@ -221,9 +221,9 @@ Inductive c_step (st : step_sig) : step_sig :=
                H l = None -> decompose t E (alloc v) ->
                c_step st C H (Single(None, nil, t)) C (update H l v)
                     (Single(None, nil, (fill E (loc l))))
-|c_commitStep : forall C H HV S L v t E e0, 
+|c_commitStep : forall C H HV L v t E e0, 
                   validate L H (commit HV) -> decompose t E (inatomic v) ->
-                  c_step st C H (Single(Some(S, e0), L, t)) (plus 1 C)
+                  c_step st C H (Single(Some(C, e0), L, t)) (plus 1 C)
                          HV (Single(None, nil, (fill E v)))
 |c_atomicStep : forall C H E e t, 
                 decompose t E (atomic e) ->
@@ -258,8 +258,8 @@ Inductive c_multistep (st : step_sig) : step_sig :=
 
 Definition p_step := c_step p_step_.
 Definition f_step := c_step f_step_. 
-Definition p_multistep := c_multistep p_step.
-Definition f_multistep := c_multistep f_step.  
+Definition p_multistep := c_multistep p_step_.
+Definition f_multistep := c_multistep f_step_.  
 
 (*reflexivie transitive closure of trans_step*)
 Inductive trans_multistep H C : thread -> thread -> Prop :=
