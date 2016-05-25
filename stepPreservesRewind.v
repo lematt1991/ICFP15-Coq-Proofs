@@ -45,13 +45,13 @@ Qed.
 
   
 Theorem rewindCommitSingleNI : forall C H S e0 L e L' e' HV L'',
-    validate L'' H (commit HV) -> S <= C ->
+    validate L'' H (commit HV) -> 
     rewind H C (Some(S, e0), L, e) (Some(S, e0), L', e') ->
     rewind HV (1+C) (Some(S, e0), L, e) (Some(S, e0), L', e'). 
 Proof.
-  intros. genDeps{{HV; L''}}. dependent induction H2; intros.
+  intros. genDeps{{HV; L''}}. dependent induction H1; intros.
   {econstructor. }
-  {inv H3.
+  {inv H2.
    {econstructor. eapply IHrewind; eauto.
     eapply commitLookup in H0; eauto. invertHyp.
     eapply r_readStepInvalid; eauto. }
@@ -144,6 +144,38 @@ Proof.
   {eapply rewindCommitNI; eauto. }
 Qed.
 
+Theorem logSizeValidate : forall L L' H e',
+    validate L H (abort e' L') -> length L > length L'. 
+Proof.
+  intros. dependent induction H0; simpl; omega.
+Qed. 
+
+Theorem rewindLogSize : forall H C S e0 L L' e e',
+    rewind H C (Some(S, e0), L, e) (Some(S, e0), L', e') ->
+    L' = L \/ (exists L'', L'' ++ L = L'). 
+Proof.
+  intros. dependent induction H0; auto.
+  inv H1; simpl;
+    match goal with
+    |H : forall S0 e1 L1 L' e2 e', ?x ~= ?y -> ?Z |- _ =>
+     let n := fresh
+     in (assert(n : x ~= x) by auto)
+    end; eauto. 
+  {right. eapply IHrewind with (L' := L0) in H1. inv H1.
+   {exists [readItem l E v]. simpl. auto. }
+   {invertHyp. exists (readItem l E v :: x). simpl. auto. } eauto. 
+  }
+  {right. eapply IHrewind with (L' := L0) in H1. inv H1.
+   {exists [readItem l E v]. simpl. auto. }
+   {invertHyp. exists (readItem l E v :: x). simpl. auto. }
+   eauto. }
+  {right. eapply IHrewind with (L' := L0) in H1. inv H1.
+   {exists [writeItem l v]. simpl. auto. }
+   {invertHyp. exists (writeItem l v :: x). simpl. auto. }
+   eauto. }
+Qed. 
+
+    
 Theorem rewindAbort : forall H C S e0 L' e' L'' e'',
     validate L' H (abort e'' L'') ->
     rewind H C (Some(S, e0), nil, e0) (Some(S, e0), L', e') ->
