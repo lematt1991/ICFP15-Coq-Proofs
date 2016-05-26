@@ -17,8 +17,8 @@ Fixpoint Done T :=
   end. 
 
 (*if T is done and T' is ahead of T, then T = T'*)
-Theorem DoneAheadOf : forall H T T', 
-                   Done T -> poolAheadOf H T T' ->
+Theorem DoneAheadOf : forall H T T' C, 
+                   Done T -> poolAheadOf H C T T' ->
                    T = T'. 
 Proof.
   intros. induction H1. 
@@ -35,7 +35,7 @@ Proof.
 Qed. 
 
 (*If T is an initial pool, then it is trivially ahead of itself*)
-Theorem AheadOfInitPool : forall H T, initialPool T -> poolAheadOf H T T. 
+Theorem AheadOfInitPool : forall H T C, initialPool T -> poolAheadOf H C T T. 
 Proof.
   intros. destruct T. destruct t. destruct p. destruct o. 
   inv H0. destruct l. repeat constructor. inv H0. inv H0. 
